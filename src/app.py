@@ -2,28 +2,26 @@ from flask import Flask, render_template, Response
 import cv2
 from hud import overlay_hud
 from utils.signal_detection import detect_wifi, detect_bluetooth
-from utils.flipper_integration import get_flipper_signals
 import threading
 import time
 
 app = Flask(__name__)
 
-# Initialize the camera with libcamera backend
+# Initialize the camera
 camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
 # Shared data structures for signals
 wifi_signals = []
 bluetooth_signals = []
-flipper_signals = []
 
 # Lock for thread-safe operations
 lock = threading.Lock()
 
 def update_signals():
     """
-    Periodically updates Wi-Fi, Bluetooth, and Flipper signals in a separate thread.
+    Periodically updates Wi-Fi and Bluetooth signals in a separate thread.
     """
-    global wifi_signals, bluetooth_signals, flipper_signals
+    global wifi_signals, bluetooth_signals
     while True:
         with lock:
             try:
@@ -32,9 +30,6 @@ def update_signals():
 
                 # Update Bluetooth signals
                 bluetooth_signals = detect_bluetooth()
-
-                # Update Flipper signals
-                flipper_signals = get_flipper_signals()
             except Exception as e:
                 print(f"Signal update error: {e}")
         # Adjust the sleep duration as needed
@@ -56,7 +51,7 @@ def generate_frames():
         else:
             with lock:
                 # Overlay the HUD with detected signals
-                frame = overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals)
+                frame = overlay_hud(frame, wifi_signals, bluetooth_signals, [])
             _, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
             yield (b'--frame\r\n'
@@ -77,9 +72,4 @@ def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == "__main__":
-    try:
-        app.run(host="0.0.0.0", port=5000, debug=True)
-    except KeyboardInterrupt:
-        print("\nShutting down server...")
-        if camera.isOpened():
-            camera.release()
+    app.run(host="0.0.0.0", port=5000, debug=True)

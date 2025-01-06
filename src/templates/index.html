@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IQ Device Live HUD</title>
+    <title>HUD Viewer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
-    <h1>IQ Device Live HUD</h1>
+    <h1>HUD Viewer</h1>
     <div class="video-container">
-        <img src="{{ url_for('video_feed') }}" alt="Live Camera Feed">
+        <img src="{{ url_for('video_feed') }}" alt="Video Feed">
     </div>
-    <script src="{{ url_for('static', filename='js/scripts.js') }}"></script>
 </body>
 </html>
