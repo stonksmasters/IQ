@@ -8,8 +8,8 @@ import time
 
 app = Flask(__name__)
 
-# Initialize the camera
-camera = cv2.VideoCapture(0)
+# Initialize the camera with libcamera backend
+camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
 # Shared data structures for signals
 wifi_signals = []
@@ -27,8 +27,13 @@ def update_signals():
     while True:
         with lock:
             try:
+                # Update Wi-Fi signals
                 wifi_signals = detect_wifi()
+
+                # Update Bluetooth signals
                 bluetooth_signals = detect_bluetooth()
+
+                # Update Flipper signals
                 flipper_signals = get_flipper_signals()
             except Exception as e:
                 print(f"Signal update error: {e}")
@@ -46,6 +51,7 @@ def generate_frames():
     while True:
         success, frame = camera.read()
         if not success:
+            print("Failed to read frame from camera")
             break
         else:
             with lock:
@@ -71,4 +77,9 @@ def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    try:
+        app.run(host="0.0.0.0", port=5000, debug=True)
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+        if camera.isOpened():
+            camera.release()
