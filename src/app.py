@@ -38,7 +38,6 @@ def generate_frames():
     """
     Generates video frames using libcamera-vid and overlays HUD data.
     """
-    # Launch libcamera-vid subprocess
     process = subprocess.Popen(
         ["libcamera-vid", "--codec", "mjpeg", "-o", "-", "-t", "0", "--inline"],
         stdout=subprocess.PIPE,
@@ -47,8 +46,8 @@ def generate_frames():
 
     try:
         while True:
-            # Read frame data from libcamera-vid
-            frame_data = process.stdout.read(1024 * 1024)
+            # Read frame data
+            frame_data = process.stdout.read(2 * 1024 * 1024)  # Increase buffer size
             if not frame_data:
                 print("Failed to read frame from camera")
                 break
@@ -57,7 +56,7 @@ def generate_frames():
             np_frame = np.frombuffer(frame_data, dtype=np.uint8)
             frame = cv2.imdecode(np_frame, cv2.IMREAD_COLOR)
             if frame is None:
-                print("Failed to decode frame")
+                print("Failed to decode frame, skipping...")
                 continue
 
             with lock:
@@ -94,5 +93,3 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=5000, debug=True)
     except KeyboardInterrupt:
         print("\nShutting down server...")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
