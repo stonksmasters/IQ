@@ -20,12 +20,18 @@ flipper_signals = []
 lock = threading.Lock()
 
 def update_signals():
+    """
+    Periodically updates Wi-Fi, Bluetooth, and Flipper signals in a separate thread.
+    """
     global wifi_signals, bluetooth_signals, flipper_signals
     while True:
         with lock:
-            wifi_signals = detect_wifi()
-            bluetooth_signals = detect_bluetooth()
-            flipper_signals = get_flipper_signals()
+            try:
+                wifi_signals = detect_wifi()
+                bluetooth_signals = detect_bluetooth()
+                flipper_signals = get_flipper_signals()
+            except Exception as e:
+                print(f"Signal update error: {e}")
         # Adjust the sleep duration as needed
         time.sleep(5)
 
@@ -34,6 +40,9 @@ signal_thread = threading.Thread(target=update_signals, daemon=True)
 signal_thread.start()
 
 def generate_frames():
+    """
+    Generates video frames from the camera with overlaid HUD data.
+    """
     while True:
         success, frame = camera.read()
         if not success:
@@ -49,8 +58,17 @@ def generate_frames():
 
 @app.route('/')
 def index():
+    """
+    Renders the main HTML page for the application.
+    """
     return render_template('index.html')
 
 @app.route('/video_feed')
 def video_feed():
+    """
+    Provides the video feed with HUD overlays as a streaming response.
+    """
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)

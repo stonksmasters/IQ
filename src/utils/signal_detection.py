@@ -1,7 +1,12 @@
 import subprocess
-import bluetooth
+from bleak import BleakScanner
+import asyncio
 
 def detect_wifi():
+    """
+    Scans for nearby Wi-Fi networks and returns a list of dictionaries
+    containing SSID and signal strength.
+    """
     networks = []
     try:
         result = subprocess.run(["iwlist", "wlan0", "scan"], capture_output=True, text=True)
@@ -18,14 +23,24 @@ def detect_wifi():
         print(f"Wi-Fi detection error: {e}")
     return networks
 
+
 def detect_bluetooth():
-    devices = []
-    try:
-        nearby_devices = bluetooth.discover_devices(duration=8, lookup_names=True, lookup_class=True)
-        for addr, name, device_class in nearby_devices:
-            # Placeholder for RSSI; PyBluez doesn't provide RSSI directly
-            rssi = "N/A"
-            devices.append((name, addr, rssi))
-    except Exception as e:
-        print(f"Bluetooth detection error: {e}")
-    return devices
+    """
+    Scans for Bluetooth Low Energy (BLE) devices and returns a list of found devices.
+    """
+    async def scan_devices():
+        devices = []
+        try:
+            discovered_devices = await BleakScanner.discover()
+            for device in discovered_devices:
+                devices.append({
+                    "name": device.name or "Unknown",
+                    "address": device.address,
+                    "rssi": device.rssi
+                })
+        except Exception as e:
+            print(f"Bluetooth detection error: {e}")
+        return devices
+
+    # Use asyncio to run the BLE scan
+    return asyncio.run(scan_devices())
