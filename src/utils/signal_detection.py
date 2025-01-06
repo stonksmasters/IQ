@@ -23,6 +23,7 @@ def detect_wifi():
         print(f"Wi-Fi detection error: {e}")
     return networks
 
+
 def detect_bluetooth():
     """
     Scans for Bluetooth Low Energy (BLE) devices and returns a list of found devices.
@@ -35,7 +36,7 @@ def detect_bluetooth():
                 devices.append({
                     "name": device.name or "Unknown",
                     "address": device.address,
-                    "rssi": device.advertisement_data.rssi  # Updated property
+                    "rssi": device.rssi  # Directly access rssi attribute
                 })
         except Exception as e:
             print(f"Bluetooth detection error: {e}")
