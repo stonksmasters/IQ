@@ -1,17 +1,13 @@
 from flask import Flask, render_template, Response
-import cv2
+import subprocess
 from hud import overlay_hud
 from utils.signal_detection import detect_wifi, detect_bluetooth
 import threading
 import time
+import cv2
+import numpy as np
 
 app = Flask(__name__)
-
-# Initialize the camera with libcamera backend
-camera = cv2.VideoCapture(0)
-if not camera.isOpened():
-    print("Error: Unable to access the camera.")
-    exit(1)
 
 # Shared data structures for signals
 wifi_signals = []
@@ -28,14 +24,10 @@ def update_signals():
     while True:
         with lock:
             try:
-                # Update Wi-Fi signals
                 wifi_signals = detect_wifi()
-
-                # Update Bluetooth signals
                 bluetooth_signals = detect_bluetooth()
             except Exception as e:
                 print(f"Signal update error: {e}")
-        # Adjust the sleep duration as needed
         time.sleep(5)
 
 # Start the signal update thread
@@ -44,21 +36,38 @@ signal_thread.start()
 
 def generate_frames():
     """
-    Generates video frames from the camera with overlaid HUD data.
+    Generates video frames using libcamera-vid and overlays HUD data.
     """
-    while True:
-        success, frame = camera.read()
-        if not success:
-            print("Failed to read frame from camera")
-            break
-        else:
+    # Launch libcamera-vid subprocess
+    process = subprocess.Popen(
+        ["libcamera-vid", "--codec", "mjpeg", "-o", "-", "-t", "0", "--inline"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL
+    )
+
+    try:
+        while True:
+            # Read frame from libcamera-vid
+            frame_data = process.stdout.read(1024 * 1024)  # Adjust buffer size if needed
+            if not frame_data:
+                print("Failed to read frame from camera")
+                break
+
+            # Decode MJPEG frame
+            np_frame = np.frombuffer(frame_data, dtype=np.uint8)
+            frame = cv2.imdecode(np_frame, cv2.IMREAD_COLOR)
+
             with lock:
-                # Overlay the HUD with detected signals
+                # Overlay HUD data
                 frame = overlay_hud(frame, wifi_signals, bluetooth_signals, [])
+
+            # Encode frame as JPEG
             _, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+
+    finally:
+        process.terminate()
 
 @app.route('/')
 def index():
@@ -79,5 +88,3 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=5000, debug=True)
     except KeyboardInterrupt:
         print("\nShutting down server...")
-        if camera.isOpened():
-            camera.release()
