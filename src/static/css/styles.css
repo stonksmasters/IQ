@@ -1,0 +1,21 @@
+body {
+    text-align: center;
+    background-color: #000;
+    color: #fff;
+    font-family: Arial, sans-serif;
+}
+
+h1 {
+    margin: 20px;
+}
+
+.video-container {
+    display: inline-block;
+    position: relative;
+}
+
+.video-container img {
+    width: 80%;
+    height: auto;
+    border: 2px solid #fff;
+}

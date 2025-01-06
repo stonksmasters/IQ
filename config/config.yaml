@@ -1,0 +1,11 @@
+flipper:
+  serial_port: "/dev/ttyUSB0"
+  baud_rate: 115200
+  scan_command: "SCAN"
+
+wifi:
+  interface: "wlan0"
+  scan_interval: 5  # in seconds
+
+bluetooth:
+  scan_duration: 8  # in seconds
