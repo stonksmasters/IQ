@@ -5,7 +5,7 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
 
     # Overlay Wi-Fi Signals
     for signal in wifi_signals:
-        cv2.putText(frame, f"Wi-Fi: {signal['SSID']} ({signal['signal']})", 
+        cv2.putText(frame, f"Wi-Fi: {signal['SSID']} ({signal['signal']}dBm)", 
                     (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         y_offset += 20
 

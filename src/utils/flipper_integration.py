@@ -1,5 +1,6 @@
 import serial
 import time
+import json
 
 def get_flipper_signals():
     signals = []
@@ -12,7 +13,6 @@ def get_flipper_signals():
         ser.close()
 
         # Parse the response (assuming JSON format for this example)
-        import json
         data = json.loads(response)
         for item in data.get('signals', []):
             signals.append({
