@@ -7,8 +7,11 @@ import time
 
 app = Flask(__name__)
 
-# Initialize the camera
-camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
+# Initialize the camera with libcamera backend
+camera = cv2.VideoCapture(0)
+if not camera.isOpened():
+    print("Error: Unable to access the camera.")
+    exit(1)
 
 # Shared data structures for signals
 wifi_signals = []
@@ -72,4 +75,9 @@ def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    try:
+        app.run(host="0.0.0.0", port=5000, debug=True)
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+        if camera.isOpened():
+            camera.release()
