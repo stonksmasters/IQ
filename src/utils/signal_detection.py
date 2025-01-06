@@ -1,3 +1,5 @@
+# src/utils/signal_detection.py
+
 import subprocess
 from bleak import BleakScanner
 import asyncio
@@ -30,16 +32,23 @@ def detect_bluetooth():
     """
     async def scan_devices():
         devices = []
+
+        def detection_callback(device, advertisement_data):
+            devices.append({
+                "name": device.name or "Unknown",
+                "address": device.address,
+                "rssi": advertisement_data.rssi  # Use advertisement data for RSSI
+            })
+
         try:
-            discovered_devices = await BleakScanner.discover()
-            for device in discovered_devices:
-                devices.append({
-                    "name": device.name or "Unknown",
-                    "address": device.address,
-                    "rssi": device.rssi  # Directly access rssi attribute
-                })
+            scanner = BleakScanner()
+            scanner.register_detection_callback(detection_callback)
+            await scanner.start()
+            await asyncio.sleep(5)  # Scan for 5 seconds
+            await scanner.stop()
         except Exception as e:
             print(f"Bluetooth detection error: {e}")
+
         return devices
 
     # Use asyncio to run the BLE scan

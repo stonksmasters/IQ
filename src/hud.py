@@ -1,8 +1,10 @@
+# src/hud.py
+
 import cv2
 
 def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
     """
-    Overlays Wi-Fi, Bluetooth, and Flipper signals on the video frame.
+    Overlays Wi-Fi and Bluetooth signals on the video frame.
     """
     y_offset = 50
 

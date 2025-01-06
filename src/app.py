@@ -1,3 +1,5 @@
+# src/app.py
+
 from flask import Flask, render_template, Response
 import subprocess
 from hud import overlay_hud
@@ -36,38 +38,50 @@ signal_thread.start()
 
 def generate_frames():
     """
-    Generates video frames using libcamera-vid and overlays HUD data.
+    Generates video frames by reading from libcamera-vid subprocess,
+    decoding JPEG frames, overlaying HUD data, and yielding them for streaming.
     """
     process = subprocess.Popen(
         ["libcamera-vid", "--codec", "mjpeg", "-o", "-", "-t", "0", "--inline"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
-
+    
+    buffer = b""
+    start_marker = b'\xff\xd8'  # JPEG start
+    end_marker = b'\xff\xd9'    # JPEG end
+    
     try:
         while True:
-            # Read frame data
-            frame_data = process.stdout.read(2 * 1024 * 1024)  # Increase buffer size
-            if not frame_data:
+            chunk = process.stdout.read(1024)
+            if not chunk:
                 print("Failed to read frame from camera")
                 break
-
-            # Decode MJPEG frame
-            np_frame = np.frombuffer(frame_data, dtype=np.uint8)
-            frame = cv2.imdecode(np_frame, cv2.IMREAD_COLOR)
-            if frame is None:
-                print("Failed to decode frame, skipping...")
-                continue
-
-            with lock:
-                # Overlay HUD data
-                frame = overlay_hud(frame, wifi_signals, bluetooth_signals, [])
-
-            # Encode frame as JPEG
-            _, buffer = cv2.imencode('.jpg', frame)
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-
+            buffer += chunk
+            
+            # Search for JPEG start and end
+            start = buffer.find(start_marker)
+            end = buffer.find(end_marker)
+            
+            if start != -1 and end != -1 and end > start:
+                jpeg = buffer[start:end+2]
+                buffer = buffer[end+2:]
+                
+                # Decode JPEG
+                frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                if frame is None:
+                    print("Failed to decode frame, skipping...")
+                    continue
+                
+                with lock:
+                    # Overlay HUD data
+                    frame = overlay_hud(frame, wifi_signals, bluetooth_signals, [])
+                
+                # Encode frame as JPEG
+                _, buffer_encoded = cv2.imencode('.jpg', frame)
+                frame_bytes = buffer_encoded.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
     except Exception as e:
         print(f"Error in generate_frames: {e}")
     finally:
