@@ -1,7 +1,6 @@
 import cv2
 import os
 import logging
-import random  # Simulated source positions for demonstration
 
 # Configure logging for hud.py
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
