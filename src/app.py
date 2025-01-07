@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import os
 import logging
-import shutil  # Added import for shutil
+import shutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
@@ -20,7 +20,7 @@ app = Flask(__name__)
 # Shared data structures for signals
 wifi_signals = []
 bluetooth_signals = []
-selected_signal = {"wifi": None, "bluetooth": None}  # Stores the selected Wi-Fi/Bluetooth signal to track
+selected_signal = {"type": None, "name": None}  # Store signal type and name to track
 
 # Lock for thread-safe operations
 lock = threading.Lock()
@@ -122,12 +122,21 @@ def track_signal():
     signal_name = data.get("name")
 
     with lock:
-        if signal_type == "wifi":
-            selected_signal["wifi"] = signal_name
-        elif signal_type == "bluetooth":
-            selected_signal["bluetooth"] = signal_name
+        selected_signal["type"] = signal_type
+        selected_signal["name"] = signal_name
         logging.info(f"Tracking {signal_type} signal: {signal_name}")
 
+    return jsonify({"status": "success"})
+
+@app.route('/clear_signal', methods=['POST'])
+def clear_signal():
+    """
+    API to clear the selected signal and reset tracking.
+    """
+    with lock:
+        selected_signal["type"] = None
+        selected_signal["name"] = None
+        logging.info("Cleared tracking signal.")
     return jsonify({"status": "success"})
 
 @app.route('/video_feed')

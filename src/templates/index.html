@@ -17,6 +17,7 @@
                 listItem.textContent = `${signal.SSID} (${signal.signal} dBm)`;
                 const button = document.createElement('button');
                 button.textContent = 'Track';
+                button.className = 'track-button';
                 button.onclick = () => trackSignal('wifi', signal.SSID);
                 listItem.appendChild(button);
                 wifiList.appendChild(listItem);
@@ -29,6 +30,7 @@
                 listItem.textContent = `${signal.name} (${signal.rssi} dBm)`;
                 const button = document.createElement('button');
                 button.textContent = 'Track';
+                button.className = 'track-button';
                 button.onclick = () => trackSignal('bluetooth', signal.name);
                 listItem.appendChild(button);
                 bluetoothList.appendChild(listItem);
@@ -44,8 +46,78 @@
             alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
         }
 
+        async function clearSignal() {
+            await fetch('/clear_signal', { method: 'POST' });
+            alert('Tracking cleared.');
+        }
+
         setInterval(fetchSignals, 5000); // Refresh signals every 5 seconds
     </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        li {
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .track-button {
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .track-button:hover {
+            background-color: #0056b3;
+        }
+
+        .clear-button {
+            display: block;
+            margin: 20px auto;
+            background-color: #dc3545;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .clear-button:hover {
+            background-color: #b02a37;
+        }
+
+        .video-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        img {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+    </style>
 </head>
 <body>
     <h1>Signal Tracker</h1>
@@ -53,7 +125,9 @@
     <ul id="wifi-list"></ul>
     <h2>Bluetooth Signals</h2>
     <ul id="bluetooth-list"></ul>
-    <h2>Live Feed</h2>
-    <img src="/video_feed" alt="Live Feed">
+    <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
+    <div class="video-container">
+        <img src="/video_feed" alt="Live Feed">
+    </div>
 </body>
 </html>
