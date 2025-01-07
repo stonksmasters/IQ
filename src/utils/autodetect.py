@@ -2,26 +2,28 @@ import cv2
 import numpy as np
 import os
 import logging
+import random  # Fix for "name 'random' is not defined"
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
 
 class AutoDetection:
     def __init__(self):
         # Paths to model files
-        self.model_weights = os.path.join(os.path.dirname(__file__), "darknet/cfg/yolov4-tiny.weights")
-        self.model_cfg = os.path.join(os.path.dirname(__file__), "darknet/cfg/yolov4-tiny.cfg")
+        self.model_weights = os.path.join(
+            os.path.dirname(__file__), "darknet/cfg/yolov4-tiny.weights"
+        )
+        self.model_cfg = os.path.join(
+            os.path.dirname(__file__), "darknet/cfg/yolov4-tiny.cfg"
+        )
         self.classes_file = os.path.join(os.path.dirname(__file__), "electronics.names")
 
-        # Verify the existence of the model files
+        # Verify file paths
         if not os.path.exists(self.model_weights):
-            logging.error(f"Model weights not found at {self.model_weights}")
             raise FileNotFoundError(f"Model weights not found at {self.model_weights}")
         if not os.path.exists(self.model_cfg):
-            logging.error(f"Model config not found at {self.model_cfg}")
             raise FileNotFoundError(f"Model config not found at {self.model_cfg}")
         if not os.path.exists(self.classes_file):
-            logging.error(f"Classes file not found at {self.classes_file}")
             raise FileNotFoundError(f"Classes file not found at {self.classes_file}")
 
         # Load YOLO network
@@ -42,7 +44,9 @@ class AutoDetection:
         height, width = frame.shape[:2]
 
         # Preprocess frame
-        blob = cv2.dnn.blobFromImage(frame, 1/255.0, (416, 416), (0, 0, 0), swapRB=True, crop=False)
+        blob = cv2.dnn.blobFromImage(
+            frame, 1 / 255.0, (416, 416), (0, 0, 0), swapRB=True, crop=False
+        )
         self.net.setInput(blob)
 
         # Perform forward pass

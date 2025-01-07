@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response
 import subprocess
 from hud import overlay_hud
-from utils.autodetect import autodetect  # Ensure autodetect is imported only once
+from utils.autodetect import autodetect
 from utils.signal_detection import detect_wifi, detect_bluetooth
 import threading
 import time
@@ -12,7 +12,7 @@ import logging
 import shutil
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
 
 app = Flask(__name__)
 
@@ -24,6 +24,7 @@ selected_signal = {"type": None, "name": None}  # Store signal type and name to 
 # Lock for thread-safe operations
 lock = threading.Lock()
 
+
 def update_signals():
     """
     Periodically updates Wi-Fi and Bluetooth signals in a separate thread.
@@ -33,17 +34,19 @@ def update_signals():
         with lock:
             try:
                 logging.info("Updating Wi-Fi and Bluetooth signals.")
-                wifi_signals = detect_wifi()
-                bluetooth_signals = detect_bluetooth()
+                wifi_signals = detect_wifi()  # Fetch live Wi-Fi signals
+                bluetooth_signals = detect_bluetooth()  # Fetch live Bluetooth signals
                 logging.info(f"Detected Wi-Fi: {wifi_signals}")
                 logging.info(f"Detected Bluetooth: {bluetooth_signals}")
             except Exception as e:
                 logging.error(f"Signal update error: {e}")
         time.sleep(5)
 
+
 # Start the signal update thread
 signal_thread = threading.Thread(target=update_signals, daemon=True)
 signal_thread.start()
+
 
 def generate_frames():
     """
@@ -56,14 +59,22 @@ def generate_frames():
         return
 
     process = subprocess.Popen(
-        ["libcamera-vid", "--codec", "mjpeg", "--width", "640", "--height", "480", "-o", "-", "-t", "0", "--inline"],
+        [
+            "libcamera-vid",
+            "--codec", "mjpeg",
+            "--width", "640",
+            "--height", "480",
+            "-o", "-",
+            "-t", "0",
+            "--inline",
+        ],
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
     )
 
     buffer = b""
-    start_marker = b'\xff\xd8'
-    end_marker = b'\xff\xd9'
+    start_marker = b"\xff\xd8"
+    end_marker = b"\xff\xd9"
 
     try:
         while True:
@@ -77,8 +88,8 @@ def generate_frames():
             end = buffer.find(end_marker)
 
             if start != -1 and end != -1 and end > start:
-                jpeg = buffer[start:end + 2]
-                buffer = buffer[end + 2:]
+                jpeg = buffer[start : end + 2]
+                buffer = buffer[end + 2 :]
 
                 frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
                 if frame is None:
@@ -98,24 +109,28 @@ def generate_frames():
                     except Exception as e:
                         logging.error(f"Error applying HUD overlay: {e}")
 
-                _, buffer_encoded = cv2.imencode('.jpg', frame)
+                _, buffer_encoded = cv2.imencode(".jpg", frame)
                 frame_bytes = buffer_encoded.tobytes()
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
     except Exception as e:
         logging.error(f"Error in generate_frames: {e}")
     finally:
         process.terminate()
         process.wait()
 
-@app.route('/')
+
+@app.route("/")
 def index():
     """
     Renders the main HTML page with lists of signals and options to track them.
     """
-    return render_template('index.html')
+    return render_template("index.html")
 
-@app.route('/signals', methods=['GET'])
+
+@app.route("/signals", methods=["GET"])
 def get_signals():
     """
     API to fetch the current Wi-Fi and Bluetooth signals.
@@ -123,7 +138,8 @@ def get_signals():
     with lock:
         return jsonify({"wifi": wifi_signals, "bluetooth": bluetooth_signals})
 
-@app.route('/track_signal', methods=['POST'])
+
+@app.route("/track_signal", methods=["POST"])
 def track_signal():
     """
     API to track a selected signal (Wi-Fi or Bluetooth).
@@ -139,7 +155,8 @@ def track_signal():
 
     return jsonify({"status": "success"})
 
-@app.route('/clear_signal', methods=['POST'])
+
+@app.route("/clear_signal", methods=["POST"])
 def clear_signal():
     """
     API to clear the selected signal and reset tracking.
@@ -150,12 +167,14 @@ def clear_signal():
         logging.info("Cleared tracking signal.")
     return jsonify({"status": "success"})
 
-@app.route('/video_feed')
+
+@app.route("/video_feed")
 def video_feed():
     """
     Provides the video feed with HUD overlays as a streaming response.
     """
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
 
 if __name__ == "__main__":
     try:
