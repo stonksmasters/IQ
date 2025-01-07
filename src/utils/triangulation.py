@@ -1,4 +1,24 @@
 import numpy as np
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
+
+def rssi_to_distance(rssi, A=-40, n=2):
+    """
+    Converts RSSI to distance using a propagation model.
+    
+    Args:
+        rssi (int): Signal strength in dBm.
+        A (int): RSSI at 1 meter.
+        n (int): Path-loss exponent.
+    Returns:
+        float: Estimated distance in meters.
+    """
+    try:
+        return 10 ** ((A - rssi) / (10 * n))
+    except Exception as e:
+        logging.error(f"Error in RSSI to distance calculation: {e}")
+        return None
 
 def triangulate(positions, distances):
     """
@@ -35,4 +55,51 @@ def triangulate(positions, distances):
         result = np.linalg.lstsq(A, b, rcond=None)[0]
         return result[0][0], result[1][0]  # Estimated (x, y) position
     except Exception as e:
-        raise RuntimeError(f"Error in triangulation: {e}")
+        logging.error(f"Error in triangulation: {e}")
+        return None
+
+def calculate_distances_and_triangulate(devices):
+    """
+    Calculate distances dynamically from RSSI and perform triangulation.
+    
+    Args:
+        devices (list of dicts): List of device data with positions and RSSI values.
+            Example:
+            [
+                {"position": (x1, y1), "rssi": -50},
+                {"position": (x2, y2), "rssi": -60},
+                {"position": (x3, y3), "rssi": -70},
+            ]
+
+    Returns:
+        tuple: Estimated (x, y) position of the signal source.
+    """
+    positions = []
+    distances = []
+
+    for device in devices:
+        position = device.get("position")
+        rssi = device.get("rssi")
+
+        if position and rssi is not None:
+            distance = rssi_to_distance(rssi)
+            if distance is not None:
+                positions.append(position)
+                distances.append(distance)
+
+    if len(positions) >= 3:
+        return triangulate(positions, distances)
+    else:
+        logging.error("Insufficient data for triangulation. At least 3 devices are required.")
+        return None
+
+if __name__ == "__main__":
+    # Example usage:
+    devices = [
+        {"position": (0, 0), "rssi": -50},
+        {"position": (5, 0), "rssi": -60},
+        {"position": (0, 5), "rssi": -70},
+    ]
+    estimated_position = calculate_distances_and_triangulate(devices)
+    if estimated_position:
+        print(f"Estimated position of the signal source: {estimated_position}")

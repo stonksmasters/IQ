@@ -1,147 +1,169 @@
-import cv2
-import os
+import subprocess
+from bleak import BleakScanner
+import asyncio
 import logging
-import random
+import math
+from typing import List, Dict
 
-# Configure logging for hud.py
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
 
-# Get the absolute path of the current file
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Paths to the icons
-WIFI_ICON_PATH = os.path.join(BASE_DIR, "../static/images/icons/wifi_icon.png")
-BLUETOOTH_ICON_PATH = os.path.join(BASE_DIR, "../static/images/icons/bluetooth_icon.png")
-
-# Normalize paths
-WIFI_ICON_PATH = os.path.normpath(WIFI_ICON_PATH)
-BLUETOOTH_ICON_PATH = os.path.normpath(BLUETOOTH_ICON_PATH)
-
-# Load icons using absolute paths
-WIFI_ICON = cv2.imread(WIFI_ICON_PATH, cv2.IMREAD_UNCHANGED)
-BLUETOOTH_ICON = cv2.imread(BLUETOOTH_ICON_PATH, cv2.IMREAD_UNCHANGED)
-
-if WIFI_ICON is None:
-    logging.error(f"Unable to load Wi-Fi icon from {WIFI_ICON_PATH}")
-if BLUETOOTH_ICON is None:
-    logging.error(f"Unable to load Bluetooth icon from {BLUETOOTH_ICON_PATH}")
-
-def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal, detected_objects=None, triangulated_devices=None):
+def detect_wifi() -> List[Dict[str, any]]:
     """
-    Overlays detected Wi-Fi, Bluetooth sources, and objects as boxes with icons and information.
-    If a signal is selected for tracking, only that signal is displayed.
+    Scans for nearby Wi-Fi networks and returns a list of dictionaries
+    containing SSID, signal strength, and estimated distances.
+    """
+    networks = []
+    try:
+        result = subprocess.run(["iwlist", "wlan0", "scan"], capture_output=True, text=True)
+        output = result.stdout
+        cells = output.split("Cell")
+        for cell in cells[1:]:
+            ssid_line = [line for line in cell.split("\n") if "ESSID" in line]
+            signal_line = [line for line in cell.split("\n") if "Signal level" in line]
+            if ssid_line and signal_line:
+                ssid = ssid_line[0].split(":")[1].strip().strip('"')
+                raw_signal = signal_line[0].split("=")[1].strip()
+
+                # Parse signal strength
+                if '/' in raw_signal:
+                    signal = raw_signal.split('/')[0]  # Take the first part before '/'
+                else:
+                    signal = raw_signal.split(" ")[0]
+                try:
+                    signal = int(signal)
+                except ValueError:
+                    logging.warning(f"Non-integer signal strength '{raw_signal}' for SSID '{ssid}'")
+                    signal = 0
+
+                # Estimate distance (simple model, can be replaced with a more accurate one)
+                distance = calculate_wifi_distance(signal)
+
+                networks.append({"SSID": ssid, "signal": signal, "distance": distance})
+    except Exception as e:
+        logging.error(f"Wi-Fi detection error: {e}")
+    return networks
+
+def detect_bluetooth() -> List[Dict[str, any]]:
+    """
+    Scans for Bluetooth Low Energy (BLE) devices and returns a list of found devices
+    with their name, address, RSSI, and estimated distances.
+    """
+    async def scan_devices():
+        devices = []
+
+        def detection_callback(device, advertisement_data):
+            rssi = advertisement_data.rssi
+            distance = calculate_bluetooth_distance(rssi)
+            devices.append({
+                "name": device.name or "Unknown",
+                "address": device.address,
+                "rssi": rssi,
+                "distance": distance
+            })
+
+        try:
+            scanner = BleakScanner(detection_callback=detection_callback)
+            await scanner.start()
+            await asyncio.sleep(5)  # Scan for 5 seconds
+            await scanner.stop()
+        except Exception as e:
+            logging.error(f"Bluetooth detection error: {e}")
+
+        return devices
+
+    # Use asyncio to run the BLE scan
+    return asyncio.run(scan_devices())
+
+def calculate_wifi_distance(signal: int) -> float:
+    """
+    Estimate the distance to a Wi-Fi signal based on its RSSI using a simplified path loss model.
+    """
+    # Constants for the path loss model
+    A = -50  # RSSI at 1 meter
+    n = 2  # Path loss exponent (typical indoor value)
+
+    try:
+        distance = 10 ** ((A - signal) / (10 * n))
+    except Exception as e:
+        logging.warning(f"Error calculating Wi-Fi distance: {e}")
+        distance = float('inf')  # Return infinity if calculation fails
+
+    return round(distance, 2)
+
+def calculate_bluetooth_distance(rssi: int) -> float:
+    """
+    Estimate the distance to a Bluetooth signal based on its RSSI using a simplified path loss model.
+    """
+    # Constants for the path loss model
+    A = -59  # RSSI at 1 meter
+    n = 2  # Path loss exponent (typical indoor value)
+
+    try:
+        distance = 10 ** ((A - rssi) / (10 * n))
+    except Exception as e:
+        logging.warning(f"Error calculating Bluetooth distance: {e}")
+        distance = float('inf')  # Return infinity if calculation fails
+
+    return round(distance, 2)
+
+def prepare_triangulation_data(wifi_results, bluetooth_results, known_positions):
+    """
+    Prepares Wi-Fi and Bluetooth data for triangulation by mapping devices to known positions.
 
     Args:
-        frame (numpy.ndarray): Current video frame.
-        wifi_signals (list): List of detected Wi-Fi signals.
-        bluetooth_signals (list): List of detected Bluetooth signals.
-        selected_signal (dict): Currently tracked signal type and name.
-        detected_objects (list): List of detected objects with their bounding boxes and labels.
-        triangulated_devices (list): List of triangulated device locations with metadata.
+        wifi_results (list): Detected Wi-Fi networks with distances.
+        bluetooth_results (list): Detected Bluetooth devices with distances.
+        known_positions (dict): Mapping of device addresses/SSIDs to known (x, y) positions.
+
+    Returns:
+        dict: Contains lists of triangulation-ready Wi-Fi and Bluetooth devices.
     """
-    frame_height, frame_width = frame.shape[:2]
+    wifi_triangulation = []
+    bluetooth_triangulation = []
 
-    # Define properties
-    font_scale = 0.6
-    font_thickness = 2
-    wifi_color = (0, 255, 0)  # Green for Wi-Fi sources
-    bluetooth_color = (255, 0, 0)  # Blue for Bluetooth sources
-    object_color = (0, 0, 255)  # Red for detected objects
-    triangulated_color = (255, 255, 0)  # Yellow for triangulated devices
-    text_color = (255, 255, 255)  # White text
+    for wifi in wifi_results:
+        ssid = wifi.get("SSID")
+        if ssid in known_positions and wifi.get("distance") is not None:
+            wifi_triangulation.append({
+                "position": known_positions[ssid],
+                "distance": wifi["distance"],
+                "name": ssid,
+            })
 
-    def overlay_box(position, label, color, icon=None):
-        """
-        Overlays a box with optional icon and label text.
-        """
-        x, y = position
-        box_w, box_h = 150, 100  # Box size
+    for bluetooth in bluetooth_results:
+        address = bluetooth.get("address")
+        if address in known_positions and bluetooth.get("distance") is not None:
+            bluetooth_triangulation.append({
+                "position": known_positions[address],
+                "distance": bluetooth["distance"],
+                "name": bluetooth.get("name"),
+            })
 
-        # Draw the rectangle
-        cv2.rectangle(frame, (x, y), (x + box_w, y + box_h), color, 2)
+    return {
+        "wifi": wifi_triangulation,
+        "bluetooth": bluetooth_triangulation,
+    }
 
-        # Overlay the icon in the top-left corner of the box
-        if icon is not None:
-            try:
-                icon_resized = cv2.resize(icon, (24, 24), interpolation=cv2.INTER_AREA)
-                if icon_resized.shape[2] == 4:  # Handle alpha channel
-                    alpha_icon = icon_resized[:, :, 3] / 255.0
-                    for c in range(3):
-                        frame[y:y+24, x:x+24, c] = (
-                            alpha_icon * icon_resized[:, :, c] +
-                            (1 - alpha_icon) * frame[y:y+24, x:x+24, c]
-                        )
-                else:
-                    frame[y:y+24, x:x+24] = icon_resized
-            except Exception as e:
-                logging.error(f"Error overlaying icon at {position}: {e}")
+if __name__ == "__main__":
+    # Example known positions (e.g., Raspberry Pi, Flipper Zero)
+    known_positions = {
+        "RaspberryPi": (0, 0),  # Example position for a Wi-Fi device
+        "FlipperZero": (5, 5),  # Example position for a Bluetooth device
+    }
 
-        # Add label text
-        text_x = x + 30
-        text_y = y + 20
-        cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
-                    font_scale, text_color, font_thickness)
+    # Test Wi-Fi detection
+    logging.info("Scanning for Wi-Fi networks...")
+    wifi_results = detect_wifi()
+    for wifi in wifi_results:
+        logging.info(f"Wi-Fi: {wifi}")
 
-    # Track a specific signal if selected
-    if selected_signal and selected_signal["type"] and selected_signal["name"]:
-        signal_type = selected_signal["type"]
-        signal_name = selected_signal["name"]
+    # Test Bluetooth detection
+    logging.info("Scanning for Bluetooth devices...")
+    bluetooth_results = detect_bluetooth()
+    for bluetooth in bluetooth_results:
+        logging.info(f"Bluetooth: {bluetooth}")
 
-        # Track Wi-Fi signal
-        if signal_type == "wifi" and wifi_signals:
-            for network in wifi_signals:
-                if network["SSID"] == signal_name:
-                    x = frame_width // 2 - 75
-                    y = frame_height // 2 - 50
-                    label = f"{network['SSID']} ({network['signal']} dBm)"
-                    overlay_box((x, y), label, wifi_color, WIFI_ICON)
-
-        # Track Bluetooth signal
-        elif signal_type == "bluetooth" and bluetooth_signals:
-            for device in bluetooth_signals:
-                if device["name"] == signal_name:
-                    x = frame_width // 2 - 75
-                    y = frame_height // 2 - 50
-                    label = f"{device['name']} ({device['rssi']} dBm)"
-                    overlay_box((x, y), label, bluetooth_color, BLUETOOTH_ICON)
-
-    else:
-        # No signal selected; display all available signals
-
-        # Overlay Wi-Fi signals
-        for network in wifi_signals:
-            x = random.randint(50, frame_width - 200)
-            y = random.randint(50, frame_height - 200)
-            label = f"{network['SSID']} ({network['signal']} dBm)"
-            overlay_box((x, y), label, wifi_color, WIFI_ICON)
-
-        # Overlay Bluetooth signals
-        for device in bluetooth_signals:
-            x = random.randint(50, frame_width - 200)
-            y = random.randint(50, frame_height - 200)
-            label = f"{device['name']} ({device['rssi']} dBm)"
-            overlay_box((x, y), label, bluetooth_color, BLUETOOTH_ICON)
-
-    # Overlay triangulated devices
-    if triangulated_devices:
-        for device in triangulated_devices:
-            x, y = device["position"]
-            label = f"{device['name']} ({device['distance']} m)"
-            overlay_box((x, y), label, triangulated_color)
-
-    # Overlay detected objects
-    if detected_objects:
-        for obj in detected_objects:
-            bbox = obj["bbox"]  # Bounding box (x, y, w, h)
-            label = obj["label"]
-            x, y, w, h = bbox
-
-            # Draw the bounding box
-            cv2.rectangle(frame, (x, y), (x + w, y + h), object_color, 2)
-
-            # Add label text above the box
-            text_x, text_y = x, y - 10
-            cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
-                        font_scale, text_color, font_thickness)
-
-    return frame
+    # Prepare data for triangulation
+    triangulation_data = prepare_triangulation_data(wifi_results, bluetooth_results, known_positions)
+    logging.info(f"Triangulation Data: {triangulation_data}")
