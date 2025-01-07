@@ -1,5 +1,3 @@
-# src/app.py
-
 from flask import Flask, render_template, Response
 import subprocess
 from hud import overlay_hud
