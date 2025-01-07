@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response
 import subprocess
 from hud import overlay_hud
-from autodetect import autodetect  # Modularized object detection
+from utils.autodetect import autodetect
 from utils.signal_detection import detect_wifi, detect_bluetooth
 import threading
 import time
