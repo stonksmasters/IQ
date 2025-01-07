@@ -2,22 +2,30 @@
 
 import cv2
 import os
+import logging
 
-# Get the base directory of the project
+# Configure logging for hud.py
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
+
+# Get the absolute path of the current file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Paths to the icons
-WIFI_ICON_PATH = os.path.join(BASE_DIR, "/static/images/icons/wifi_icon.png")
-BLUETOOTH_ICON_PATH = os.path.join(BASE_DIR, "/static/images/icons/bluetooth_icon.png")
+WIFI_ICON_PATH = os.path.join(BASE_DIR, "../static/images/icons/wifi_icon.png")
+BLUETOOTH_ICON_PATH = os.path.join(BASE_DIR, "../static/images/icons/bluetooth_icon.png")
+
+# Normalize paths
+WIFI_ICON_PATH = os.path.normpath(WIFI_ICON_PATH)
+BLUETOOTH_ICON_PATH = os.path.normpath(BLUETOOTH_ICON_PATH)
 
 # Load icons using absolute paths
 WIFI_ICON = cv2.imread(WIFI_ICON_PATH, cv2.IMREAD_UNCHANGED)
 BLUETOOTH_ICON = cv2.imread(BLUETOOTH_ICON_PATH, cv2.IMREAD_UNCHANGED)
 
 if WIFI_ICON is None:
-    print(f"Error: Unable to load Wi-Fi icon from {WIFI_ICON_PATH}")
+    logging.error(f"Unable to load Wi-Fi icon from {WIFI_ICON_PATH}")
 if BLUETOOTH_ICON is None:
-    print(f"Error: Unable to load Bluetooth icon from {BLUETOOTH_ICON_PATH}")
+    logging.error(f"Unable to load Bluetooth icon from {BLUETOOTH_ICON_PATH}")
 
 def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
     """
@@ -40,17 +48,20 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
     # Function to add icon and text
     def add_hud_item(icon, text, position):
         if icon is not None:
-            icon_resized = cv2.resize(icon, (icon_size, icon_size), interpolation=cv2.INTER_AREA)
-            # Define region of interest (ROI)
-            roi = frame[position[1]:position[1]+icon_size, position[0]:position[0]+icon_size]
-            # Handle alpha channel for icons
-            if icon_resized.shape[2] == 4:
-                alpha_icon = icon_resized[:, :, 3] / 255.0
-                for c in range(0, 3):
-                    roi[:, :, c] = (alpha_icon * icon_resized[:, :, c] +
-                                    (1 - alpha_icon) * roi[:, :, c])
-            else:
-                roi[:] = icon_resized
+            try:
+                icon_resized = cv2.resize(icon, (icon_size, icon_size), interpolation=cv2.INTER_AREA)
+                # Define region of interest (ROI)
+                roi = frame[position[1]:position[1]+icon_size, position[0]:position[0]+icon_size]
+                # Handle alpha channel for icons
+                if icon_resized.shape[2] == 4:
+                    alpha_icon = icon_resized[:, :, 3] / 255.0
+                    for c in range(0, 3):
+                        roi[:, :, c] = (alpha_icon * icon_resized[:, :, c] +
+                                        (1 - alpha_icon) * roi[:, :, c])
+                else:
+                    roi[:] = icon_resized
+            except Exception as e:
+                logging.error(f"Error overlaying icon: {e}")
         # Put text next to icon
         cv2.putText(frame, text, (position[0] + icon_size + 10, position[1] + icon_size - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)

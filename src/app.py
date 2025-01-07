@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import os
 import logging
+import shutil  # Added import for shutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
@@ -55,7 +56,7 @@ def generate_frames():
 
     # Launch libcamera-vid subprocess
     process = subprocess.Popen(
-        ["libcamera-vid", "--codec", "mjpeg", "-o", "-", "-t", "0", "--inline"],
+        ["libcamera-vid", "--codec", "mjpeg", "--width", "640", "--height", "480", "-o", "-", "-t", "0", "--inline"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
