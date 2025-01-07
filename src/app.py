@@ -34,6 +34,8 @@ def update_signals():
                 logging.info("Updating Wi-Fi and Bluetooth signals.")
                 wifi_signals = detect_wifi()
                 bluetooth_signals = detect_bluetooth()
+                logging.info(f"Detected Wi-Fi: {wifi_signals}")
+                logging.info(f"Detected Bluetooth: {bluetooth_signals}")
             except Exception as e:
                 logging.error(f"Signal update error: {e}")
         time.sleep(5)
@@ -82,8 +84,14 @@ def generate_frames():
                     logging.warning("Failed to decode frame, skipping...")
                     continue
 
+                logging.info("Frame successfully decoded.")
+
                 with lock:
-                    frame = overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal)
+                    try:
+                        frame = overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal)
+                        logging.info("HUD overlay applied successfully.")
+                    except Exception as e:
+                        logging.error(f"Error applying HUD overlay: {e}")
 
                 _, buffer_encoded = cv2.imencode('.jpg', frame)
                 frame_bytes = buffer_encoded.tobytes()
