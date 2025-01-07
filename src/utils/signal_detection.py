@@ -41,8 +41,8 @@ def detect_bluetooth():
             })
 
         try:
-            scanner = BleakScanner()
-            scanner.register_detection_callback(detection_callback)
+            # Pass detection callback directly in the constructor
+            scanner = BleakScanner(detection_callback=detection_callback)
             await scanner.start()
             await asyncio.sleep(5)  # Scan for 5 seconds
             await scanner.stop()
