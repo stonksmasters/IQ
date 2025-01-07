@@ -163,7 +163,9 @@ def get_signals():
                     signal["position"] = None
                     logging.warning(f"Triangulation failed for {signal.get('name', 'Unknown')} due to: {e}")
 
+    logging.info(f"Signals returned: {all_signals}")
     return jsonify({"signals": all_signals})
+
 
 @app.route("/track_signal", methods=["POST"])
 def track_signal():

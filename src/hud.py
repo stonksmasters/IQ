@@ -28,13 +28,14 @@ if BLUETOOTH_ICON is None:
 
 def overlay_hud(frame, signals, selected_signal, detected_objects=None):
     """
-    Overlays detected Wi-Fi, Bluetooth sources, triangulated positions, and detected objects on the frame.
+    Overlays detected Wi-Fi, Bluetooth sources, and triangulated positions on the frame,
+    along with any detected objects as bounding boxes.
 
     Args:
         frame (numpy.ndarray): Current video frame.
-        signals (list): Combined list of signals (Wi-Fi, Bluetooth, triangulated data).
+        signals (list): List of combined signals (Wi-Fi, Bluetooth, and triangulated data).
         selected_signal (dict): Currently tracked signal type and name.
-        detected_objects (list): Detected objects with their bounding boxes and labels.
+        detected_objects (list): List of detected objects with their bounding boxes and labels.
     """
     frame_height, frame_width = frame.shape[:2]
 
@@ -43,7 +44,7 @@ def overlay_hud(frame, signals, selected_signal, detected_objects=None):
     font_thickness = 2
     wifi_color = (0, 255, 0)  # Green for Wi-Fi sources
     bluetooth_color = (255, 0, 0)  # Blue for Bluetooth sources
-    triangulated_color = (0, 255, 255)  # Yellow for triangulated devices
+    triangulated_color = (0, 255, 255)  # Yellow for triangulated positions
     object_color = (0, 0, 255)  # Red for detected objects
     text_color = (255, 255, 255)  # White text
 
@@ -65,8 +66,8 @@ def overlay_hud(frame, signals, selected_signal, detected_objects=None):
                     alpha_icon = icon_resized[:, :, 3] / 255.0
                     for c in range(3):
                         frame[y:y+24, x:x+24, c] = (
-                            alpha_icon * icon_resized[:, :, c]
-                            + (1 - alpha_icon) * frame[y:y+24, x:x+24, c]
+                            alpha_icon * icon_resized[:, :, c] +
+                            (1 - alpha_icon) * frame[y:y+24, x:x+24, c]
                         )
                 else:
                     frame[y:y+24, x:x+24] = icon_resized
@@ -76,40 +77,27 @@ def overlay_hud(frame, signals, selected_signal, detected_objects=None):
         # Add label text
         text_x = x + 30
         text_y = y + 20
-        cv2.putText(
-            frame,
-            label,
-            (text_x, text_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            text_color,
-            font_thickness,
-        )
+        cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale, text_color, font_thickness)
 
-    # Track a specific signal if selected
+    # Filter for the selected signal
+    filtered_signals = []
     if selected_signal and selected_signal["type"] and selected_signal["name"]:
-        signal_type = selected_signal["type"]
-        signal_name = selected_signal["name"]
-
-        for signal in signals:
-            if signal.get("type") == signal_type and signal.get("name") == signal_name:
-                position = signal.get("position", (frame_width // 2, frame_height // 2))
-                label = f"{signal_name} ({signal.get('rssi', 'N/A')} dBm)"
-                color = wifi_color if signal_type == "wifi" else bluetooth_color
-                icon = WIFI_ICON if signal_type == "wifi" else BLUETOOTH_ICON
-                overlay_box(position, label, color, icon)
+        filtered_signals = [
+            signal for signal in signals
+            if signal.get("type") == selected_signal["type"] and signal.get("name") == selected_signal["name"]
+        ]
     else:
-        # No specific signal selected; display all signals
-        for signal in signals:
-            position = signal.get("position")
-            label = f"{signal.get('name', 'Unknown')} ({signal.get('rssi', 'N/A')} dBm)"
-            color = triangulated_color if position else bluetooth_color
-            icon = WIFI_ICON if signal.get("type") == "wifi" else BLUETOOTH_ICON
-            position = position or (
-                random.randint(50, frame_width - 200),
-                random.randint(50, frame_height - 200),
-            )
-            overlay_box(position, label, color, icon)
+        filtered_signals = signals
+
+    # Overlay signals
+    for signal in filtered_signals:
+        position = signal.get("position", (random.randint(50, frame_width - 200),
+                                           random.randint(50, frame_height - 200)))
+        label = f"{signal.get('name', 'Unknown')} ({signal.get('rssi', 'N/A')} dBm)"
+        color = triangulated_color if "position" in signal else bluetooth_color
+        icon = WIFI_ICON if signal.get("type") == "wifi" else BLUETOOTH_ICON
+        overlay_box(position, label, color, icon)
 
     # Overlay detected objects
     if detected_objects:
@@ -123,14 +111,7 @@ def overlay_hud(frame, signals, selected_signal, detected_objects=None):
 
             # Add label text above the box
             text_x, text_y = x, y - 10
-            cv2.putText(
-                frame,
-                label,
-                (text_x, text_y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                font_scale,
-                text_color,
-                font_thickness,
-            )
+            cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale, text_color, font_thickness)
 
     return frame

@@ -11,29 +11,33 @@
             const data = await response.json();
 
             const wifiList = document.getElementById('wifi-list');
-            wifiList.innerHTML = '';
-            data.wifi.forEach(signal => {
-                const listItem = document.createElement('li');
-                listItem.innerHTML = `<strong>${signal.SSID}</strong> (${signal.signal} dBm)`;
-                const button = document.createElement('button');
-                button.textContent = 'Track';
-                button.className = 'track-button';
-                button.onclick = () => trackSignal('wifi', signal.SSID);
-                listItem.appendChild(button);
-                wifiList.appendChild(listItem);
-            });
-
             const bluetoothList = document.getElementById('bluetooth-list');
+
+            wifiList.innerHTML = '';
             bluetoothList.innerHTML = '';
-            data.bluetooth.forEach(signal => {
+
+            data.signals.forEach(signal => {
                 const listItem = document.createElement('li');
-                listItem.innerHTML = `<strong>${signal.name}</strong> (${signal.rssi} dBm)`;
+                const signalName = signal.name || signal.SSID || "Unknown";
+                const signalStrength = signal.rssi || signal.signal || "N/A";
+                const type = signal.type || "Unknown";
+
+                listItem.innerHTML = `
+                    <div class="signal-info">
+                        <strong>${signalName}</strong> (${signalStrength} dBm)
+                    </div>
+                `;
                 const button = document.createElement('button');
                 button.textContent = 'Track';
                 button.className = 'track-button';
-                button.onclick = () => trackSignal('bluetooth', signal.name);
+                button.onclick = () => trackSignal(type, signalName);
+
                 listItem.appendChild(button);
-                bluetoothList.appendChild(listItem);
+                if (type === "wifi") {
+                    wifiList.appendChild(listItem);
+                } else if (type === "bluetooth") {
+                    bluetoothList.appendChild(listItem);
+                }
             });
         }
 
@@ -65,6 +69,7 @@
         h1 {
             text-align: center;
             margin: 20px 0;
+            color: #007bff;
         }
 
         .container {
@@ -73,17 +78,23 @@
             justify-content: space-around;
             align-items: flex-start;
             margin: 20px;
+            gap: 20px;
         }
 
         .signal-section, .video-section {
             flex: 1 1 45%;
             max-width: 45%;
             margin: 10px;
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
         }
 
         .signal-section ul {
             list-style: none;
             padding: 0;
+            margin: 0;
         }
 
         .signal-section li {
@@ -91,19 +102,25 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background-color: #fff;
-            padding: 10px;
+            background-color: #f8f9fa;
+            padding: 10px 15px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .signal-section li:hover {
+            transform: scale(1.02);
         }
 
         .track-button {
             background-color: #007bff;
             color: #fff;
             border: none;
-            padding: 5px 10px;
+            padding: 5px 15px;
             border-radius: 4px;
             cursor: pointer;
+            transition: background-color 0.3s;
         }
 
         .track-button:hover {
@@ -119,6 +136,7 @@
             padding: 10px 20px;
             border-radius: 4px;
             cursor: pointer;
+            transition: background-color 0.3s;
         }
 
         .clear-button:hover {
@@ -127,8 +145,8 @@
 
         .video-section img {
             width: 100%;
-            border: 2px solid #ddd;
             border-radius: 8px;
+            border: 2px solid #ddd;
         }
 
         @media (max-width: 768px) {
