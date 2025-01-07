@@ -83,6 +83,7 @@ def generate_frames():
                     continue
 
                 with lock:
+                    # Pass only the selected signal to the HUD
                     frame = overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal)
 
                 _, buffer_encoded = cv2.imencode('.jpg', frame)
