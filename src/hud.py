@@ -69,7 +69,7 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
     # Overlay Wi-Fi Signals
     if wifi_signals:
         # Sort Wi-Fi networks by signal strength descending
-        sorted_wifi = sorted(wifi_signals, key=lambda x: int(x['signal']), reverse=True)
+        sorted_wifi = sorted(wifi_signals, key=lambda x: x['signal'], reverse=True)
         top_wifi = sorted_wifi[0]  # Strongest Wi-Fi network
         cv2.putText(frame, "Wi-Fi Networks:", (x_start, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         y_offset += 20
@@ -78,7 +78,7 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
             color = (0, 255, 0) if idx == 0 else (0, 200, 0)
             # Prepare text and signal strength
             text = f"{network['SSID']} ({network['signal']} dBm)"
-            signal_strength = int(network['signal'])
+            signal_strength = network['signal']
             # Draw Wi-Fi icon
             add_hud_item(WIFI_ICON, "", (x_start, y_offset))
             # Draw signal text
@@ -94,7 +94,7 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
     # Overlay Bluetooth Signals
     if bluetooth_signals:
         # Sort Bluetooth devices by RSSI descending
-        sorted_bt = sorted(bluetooth_signals, key=lambda x: int(x['rssi']), reverse=True)
+        sorted_bt = sorted(bluetooth_signals, key=lambda x: x['rssi'], reverse=True)
         top_bt = sorted_bt[0]  # Strongest Bluetooth device
         cv2.putText(frame, "Bluetooth Devices:", (x_start, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
         y_offset += 20
@@ -103,7 +103,7 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
             color = (255, 0, 0) if idx == 0 else (200, 0, 0)
             # Prepare text and signal strength
             text = f"{device['name']} ({device['address']})"
-            rssi = int(device['rssi'])
+            rssi = device['rssi']
             # Draw Bluetooth icon
             add_hud_item(BLUETOOTH_ICON, "", (x_start, y_offset))
             # Draw signal text

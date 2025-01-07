@@ -3,6 +3,10 @@
 import subprocess
 from bleak import BleakScanner
 import asyncio
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
 
 def detect_wifi():
     """
@@ -19,10 +23,20 @@ def detect_wifi():
             signal_line = [line for line in cell.split("\n") if "Signal level" in line]
             if ssid_line and signal_line:
                 ssid = ssid_line[0].split(":")[1].strip().strip('"')
-                signal = signal_line[0].split("=")[1].strip().split(" ")[0]
+                raw_signal = signal_line[0].split("=")[1].strip()
+                # Handle different signal formats
+                if '/' in raw_signal:
+                    signal = raw_signal.split('/')[0]  # Take the first part before '/'
+                else:
+                    signal = raw_signal.split(" ")[0]
+                try:
+                    signal = int(signal)
+                except ValueError:
+                    logging.warning(f"Non-integer signal strength '{raw_signal}' for SSID '{ssid}'")
+                    signal = 0  # Assign a default or skip
                 networks.append({"SSID": ssid, "signal": signal})
     except Exception as e:
-        print(f"Wi-Fi detection error: {e}")
+        logging.error(f"Wi-Fi detection error: {e}")
     return networks
 
 
@@ -47,7 +61,7 @@ def detect_bluetooth():
             await asyncio.sleep(5)  # Scan for 5 seconds
             await scanner.stop()
         except Exception as e:
-            print(f"Bluetooth detection error: {e}")
+            logging.error(f"Bluetooth detection error: {e}")
 
         return devices
 
