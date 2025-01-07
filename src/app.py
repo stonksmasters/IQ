@@ -1,4 +1,6 @@
-from flask import Flask, render_template, Response
+# src/app.py
+
+from flask import Flask, render_template, request, jsonify, Response
 import subprocess
 from hud import overlay_hud
 from utils.signal_detection import detect_wifi, detect_bluetooth
@@ -18,6 +20,7 @@ app = Flask(__name__)
 # Shared data structures for signals
 wifi_signals = []
 bluetooth_signals = []
+selected_signal = {"wifi": None, "bluetooth": None}  # Stores the selected Wi-Fi/Bluetooth signal to track
 
 # Lock for thread-safe operations
 lock = threading.Lock()
@@ -46,13 +49,11 @@ def generate_frames():
     Generates video frames by reading from libcamera-vid subprocess,
     decoding JPEG frames, overlaying HUD data, and yielding them for streaming.
     """
-    # Get the absolute path for libcamera-vid
     libcamera_path = shutil.which("libcamera-vid")
     if libcamera_path is None:
         logging.error("libcamera-vid not found. Ensure it is installed and in the PATH.")
         return
 
-    # Launch libcamera-vid subprocess
     process = subprocess.Popen(
         ["libcamera-vid", "--codec", "mjpeg", "--width", "640", "--height", "480", "-o", "-", "-t", "0", "--inline"],
         stdout=subprocess.PIPE,
@@ -60,8 +61,8 @@ def generate_frames():
     )
 
     buffer = b""
-    start_marker = b'\xff\xd8'  # JPEG start
-    end_marker = b'\xff\xd9'    # JPEG end
+    start_marker = b'\xff\xd8'
+    end_marker = b'\xff\xd9'
 
     try:
         while True:
@@ -71,25 +72,21 @@ def generate_frames():
                 break
             buffer += chunk
 
-            # Search for JPEG start and end
             start = buffer.find(start_marker)
             end = buffer.find(end_marker)
 
             if start != -1 and end != -1 and end > start:
-                jpeg = buffer[start:end+2]
-                buffer = buffer[end+2:]
+                jpeg = buffer[start:end + 2]
+                buffer = buffer[end + 2:]
 
-                # Decode JPEG
                 frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
                 if frame is None:
                     logging.warning("Failed to decode frame, skipping...")
                     continue
 
                 with lock:
-                    # Overlay HUD data
-                    frame = overlay_hud(frame, wifi_signals, bluetooth_signals, [])
+                    frame = overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal)
 
-                # Encode frame as JPEG
                 _, buffer_encoded = cv2.imencode('.jpg', frame)
                 frame_bytes = buffer_encoded.tobytes()
                 yield (b'--frame\r\n'
@@ -103,9 +100,35 @@ def generate_frames():
 @app.route('/')
 def index():
     """
-    Renders the main HTML page for the application.
+    Renders the main HTML page with lists of signals and options to track them.
     """
     return render_template('index.html')
+
+@app.route('/signals', methods=['GET'])
+def get_signals():
+    """
+    API to fetch the current Wi-Fi and Bluetooth signals.
+    """
+    with lock:
+        return jsonify({"wifi": wifi_signals, "bluetooth": bluetooth_signals})
+
+@app.route('/track_signal', methods=['POST'])
+def track_signal():
+    """
+    API to track a selected signal (Wi-Fi or Bluetooth).
+    """
+    data = request.json
+    signal_type = data.get("type")
+    signal_name = data.get("name")
+
+    with lock:
+        if signal_type == "wifi":
+            selected_signal["wifi"] = signal_name
+        elif signal_type == "bluetooth":
+            selected_signal["bluetooth"] = signal_name
+        logging.info(f"Tracking {signal_type} signal: {signal_name}")
+
+    return jsonify({"status": "success"})
 
 @app.route('/video_feed')
 def video_feed():

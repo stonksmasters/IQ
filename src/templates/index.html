@@ -1,24 +1,59 @@
-<!-- src/templates/index.html -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live HUD Viewer</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <title>Signal Tracker</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script>
+        async function fetchSignals() {
+            const response = await fetch('/signals');
+            const data = await response.json();
+
+            const wifiList = document.getElementById('wifi-list');
+            wifiList.innerHTML = '';
+            data.wifi.forEach(signal => {
+                const listItem = document.createElement('li');
+                listItem.textContent = `${signal.SSID} (${signal.signal} dBm)`;
+                const button = document.createElement('button');
+                button.textContent = 'Track';
+                button.onclick = () => trackSignal('wifi', signal.SSID);
+                listItem.appendChild(button);
+                wifiList.appendChild(listItem);
+            });
+
+            const bluetoothList = document.getElementById('bluetooth-list');
+            bluetoothList.innerHTML = '';
+            data.bluetooth.forEach(signal => {
+                const listItem = document.createElement('li');
+                listItem.textContent = `${signal.name} (${signal.rssi} dBm)`;
+                const button = document.createElement('button');
+                button.textContent = 'Track';
+                button.onclick = () => trackSignal('bluetooth', signal.name);
+                listItem.appendChild(button);
+                bluetoothList.appendChild(listItem);
+            });
+        }
+
+        async function trackSignal(type, name) {
+            await fetch('/track_signal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, name })
+            });
+            alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
+        }
+
+        setInterval(fetchSignals, 5000); // Refresh signals every 5 seconds
+    </script>
 </head>
 <body>
-    <header>
-        <h1>Live HUD Viewer</h1>
-    </header>
-    <main>
-        <div class="video-container">
-            <img src="{{ url_for('video_feed') }}" alt="Live Video Feed">
-        </div>
-    </main>
-    <footer>
-        <p>IQ Device HUD by John Borg</p>
-    </footer>
+    <h1>Signal Tracker</h1>
+    <h2>Wi-Fi Signals</h2>
+    <ul id="wifi-list"></ul>
+    <h2>Bluetooth Signals</h2>
+    <ul id="bluetooth-list"></ul>
+    <h2>Live Feed</h2>
+    <img src="/video_feed" alt="Live Feed">
 </body>
 </html>
