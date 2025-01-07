@@ -3,7 +3,6 @@
 import cv2
 import os
 import logging
-import random  # For simulated source positions
 
 # Configure logging for hud.py
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
@@ -28,9 +27,11 @@ if WIFI_ICON is None:
 if BLUETOOTH_ICON is None:
     logging.error(f"Unable to load Bluetooth icon from {BLUETOOTH_ICON_PATH}")
 
-def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
+
+def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal):
     """
     Overlays detected Wi-Fi and Bluetooth sources as boxes with icons and information.
+    If a signal is selected for tracking, only that signal is displayed.
     """
     frame_height, frame_width = frame.shape[:2]
 
@@ -71,28 +72,47 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, flipper_signals):
         cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
                     font_scale, text_color, font_thickness)
 
-    # Process Wi-Fi signals
-    if wifi_signals:
-        logging.info(f"Overlaying {len(wifi_signals)} Wi-Fi networks.")
-        for network in wifi_signals:
-            # Simulate source position (replace with actual detection logic)
-            x = random.randint(50, frame_width - 200)
-            y = random.randint(50, frame_height - 200)
+    # Check if a specific signal is being tracked
+    if selected_signal and selected_signal["type"] and selected_signal["name"]:
+        signal_type = selected_signal["type"]
+        signal_name = selected_signal["name"]
 
-            # Prepare label with SSID and signal strength
-            label = f"{network['SSID']} ({network['signal']} dBm)"
-            overlay_source((x, y), WIFI_ICON, label, wifi_color)
+        # Track Wi-Fi signal
+        if signal_type == "wifi" and wifi_signals:
+            for network in wifi_signals:
+                if network["SSID"] == signal_name:
+                    x = frame_width // 2 - 75  # Center box horizontally
+                    y = frame_height // 2 - 50  # Center box vertically
+                    label = f"{network['SSID']} ({network['signal']} dBm)"
+                    overlay_source((x, y), WIFI_ICON, label, wifi_color)
 
-    # Process Bluetooth signals
-    if bluetooth_signals:
-        logging.info(f"Overlaying {len(bluetooth_signals)} Bluetooth devices.")
-        for device in bluetooth_signals:
-            # Simulate source position (replace with actual detection logic)
-            x = random.randint(50, frame_width - 200)
-            y = random.randint(50, frame_height - 200)
+        # Track Bluetooth signal
+        elif signal_type == "bluetooth" and bluetooth_signals:
+            for device in bluetooth_signals:
+                if device["name"] == signal_name:
+                    x = frame_width // 2 - 75  # Center box horizontally
+                    y = frame_height // 2 - 50  # Center box vertically
+                    label = f"{device['name']} ({device['rssi']} dBm)"
+                    overlay_source((x, y), BLUETOOTH_ICON, label, bluetooth_color)
+    else:
+        # No signal being tracked; show all available signals
 
-            # Prepare label with device name and RSSI
-            label = f"{device['name']} ({device['rssi']} dBm)"
-            overlay_source((x, y), BLUETOOTH_ICON, label, bluetooth_color)
+        # Process Wi-Fi signals
+        if wifi_signals:
+            logging.info(f"Overlaying {len(wifi_signals)} Wi-Fi networks.")
+            for network in wifi_signals:
+                x = random.randint(50, frame_width - 200)
+                y = random.randint(50, frame_height - 200)
+                label = f"{network['SSID']} ({network['signal']} dBm)"
+                overlay_source((x, y), WIFI_ICON, label, wifi_color)
+
+        # Process Bluetooth signals
+        if bluetooth_signals:
+            logging.info(f"Overlaying {len(bluetooth_signals)} Bluetooth devices.")
+            for device in bluetooth_signals:
+                x = random.randint(50, frame_width - 200)
+                y = random.randint(50, frame_height - 200)
+                label = f"{device['name']} ({device['rssi']} dBm)"
+                overlay_source((x, y), BLUETOOTH_ICON, label, bluetooth_color)
 
     return frame
