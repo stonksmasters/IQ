@@ -24,7 +24,6 @@ selected_signal = {"type": None, "name": None}  # Store signal type and name to 
 # Lock for thread-safe operations
 lock = threading.Lock()
 
-
 def update_signals():
     """
     Periodically updates Wi-Fi and Bluetooth signals in a separate thread.
@@ -42,11 +41,9 @@ def update_signals():
                 logging.error(f"Signal update error: {e}")
         time.sleep(5)
 
-
 # Start the signal update thread
 signal_thread = threading.Thread(target=update_signals, daemon=True)
 signal_thread.start()
-
 
 def generate_frames():
     """
@@ -111,14 +108,12 @@ def generate_frames():
         process.terminate()
         process.wait()
 
-
 @app.route('/')
 def index():
     """
     Renders the main HTML page with lists of signals and options to track them.
     """
     return render_template('index.html')
-
 
 @app.route('/signals', methods=['GET'])
 def get_signals():
@@ -127,7 +122,6 @@ def get_signals():
     """
     with lock:
         return jsonify({"wifi": wifi_signals, "bluetooth": bluetooth_signals})
-
 
 @app.route('/track_signal', methods=['POST'])
 def track_signal():
@@ -145,7 +139,6 @@ def track_signal():
 
     return jsonify({"status": "success"})
 
-
 @app.route('/clear_signal', methods=['POST'])
 def clear_signal():
     """
@@ -157,14 +150,12 @@ def clear_signal():
         logging.info("Cleared tracking signal.")
     return jsonify({"status": "success"})
 
-
 @app.route('/video_feed')
 def video_feed():
     """
     Provides the video feed with HUD overlays as a streaming response.
     """
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
 
 if __name__ == "__main__":
     try:
