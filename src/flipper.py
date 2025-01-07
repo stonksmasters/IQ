@@ -8,7 +8,6 @@ from utils.triangulation import rssi_to_distance, triangulate
 # Configure logging for Flipper Zero
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
 
-
 def get_flipper_port():
     """
     Identify the serial port of the Flipper Zero.
@@ -24,13 +23,11 @@ def get_flipper_port():
         logging.error(f"Error finding Flipper port: {e}")
     return None
 
-
 def is_flipper_connected():
     """
     Check if Flipper Zero is connected via USB.
     """
     return get_flipper_port() is not None
-
 
 def flipper_ble_scan(known_positions):
     """
@@ -76,7 +73,6 @@ def flipper_ble_scan(known_positions):
         logging.error(f"Error communicating with Flipper Zero: {e}")
         return []
 
-
 def parse_flipper_output(output, known_positions):
     """
     Parse the Flipper Zero BLE scan response into a structured format.
@@ -116,3 +112,15 @@ def parse_flipper_output(output, known_positions):
         except Exception as e:
             logging.warning(f"Error parsing line: {line} | Exception: {e}")
     return devices
+
+def fetch_flipper_data(known_positions={}):
+    """
+    Fetch data from Flipper Zero via BLE scan.
+
+    Args:
+        known_positions (dict): Mapping of known device addresses to positions.
+
+    Returns:
+        list: List of scanned devices with calculated distances and positions.
+    """
+    return flipper_ble_scan(known_positions)
