@@ -14,7 +14,7 @@
             wifiList.innerHTML = '';
             data.wifi.forEach(signal => {
                 const listItem = document.createElement('li');
-                listItem.textContent = `${signal.SSID} (${signal.signal} dBm)`;
+                listItem.innerHTML = `<strong>${signal.SSID}</strong> (${signal.signal} dBm)`;
                 const button = document.createElement('button');
                 button.textContent = 'Track';
                 button.className = 'track-button';
@@ -27,7 +27,7 @@
             bluetoothList.innerHTML = '';
             data.bluetooth.forEach(signal => {
                 const listItem = document.createElement('li');
-                listItem.textContent = `${signal.name} (${signal.rssi} dBm)`;
+                listItem.innerHTML = `<strong>${signal.name}</strong> (${signal.rssi} dBm)`;
                 const button = document.createElement('button');
                 button.textContent = 'Track';
                 button.className = 'track-button';
@@ -67,16 +67,34 @@
             margin: 20px 0;
         }
 
-        ul {
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            align-items: flex-start;
+            margin: 20px;
+        }
+
+        .signal-section, .video-section {
+            flex: 1 1 45%;
+            max-width: 45%;
+            margin: 10px;
+        }
+
+        .signal-section ul {
             list-style: none;
             padding: 0;
         }
 
-        li {
+        .signal-section li {
             margin: 10px 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .track-button {
@@ -107,27 +125,34 @@
             background-color: #b02a37;
         }
 
-        .video-container {
-            display: flex;
-            justify-content: center;
-            margin-top: 20px;
-        }
-
-        img {
+        .video-section img {
+            width: 100%;
             border: 2px solid #ddd;
             border-radius: 8px;
+        }
+
+        @media (max-width: 768px) {
+            .signal-section, .video-section {
+                flex: 1 1 100%;
+                max-width: 100%;
+            }
         }
     </style>
 </head>
 <body>
     <h1>Signal Tracker</h1>
-    <h2>Wi-Fi Signals</h2>
-    <ul id="wifi-list"></ul>
-    <h2>Bluetooth Signals</h2>
-    <ul id="bluetooth-list"></ul>
-    <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
-    <div class="video-container">
-        <img src="/video_feed" alt="Live Feed">
+    <div class="container">
+        <div class="signal-section">
+            <h2>Wi-Fi Signals</h2>
+            <ul id="wifi-list"></ul>
+            <h2>Bluetooth Signals</h2>
+            <ul id="bluetooth-list"></ul>
+            <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
+        </div>
+        <div class="video-section">
+            <h2>Live Video Feed</h2>
+            <img src="/video_feed" alt="Live Feed">
+        </div>
     </div>
 </body>
 </html>
