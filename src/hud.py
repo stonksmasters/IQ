@@ -1,8 +1,7 @@
-# src/hud.py
-
 import cv2
 import os
 import logging
+import random  # Simulated source positions for demonstration
 
 # Configure logging for hud.py
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
@@ -28,10 +27,17 @@ if BLUETOOTH_ICON is None:
     logging.error(f"Unable to load Bluetooth icon from {BLUETOOTH_ICON_PATH}")
 
 
-def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal):
+def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal, detected_objects=None):
     """
-    Overlays detected Wi-Fi and Bluetooth sources as boxes with icons and information.
+    Overlays detected Wi-Fi, Bluetooth sources, and objects as boxes with icons and information.
     If a signal is selected for tracking, only that signal is displayed.
+
+    Args:
+        frame (numpy.ndarray): Current video frame.
+        wifi_signals (list): List of detected Wi-Fi signals.
+        bluetooth_signals (list): List of detected Bluetooth signals.
+        selected_signal (dict): Currently tracked signal type and name.
+        detected_objects (list): List of detected objects with their bounding boxes and labels.
     """
     frame_height, frame_width = frame.shape[:2]
 
@@ -40,14 +46,17 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal):
     font_thickness = 2
     wifi_color = (0, 255, 0)  # Green for Wi-Fi sources
     bluetooth_color = (255, 0, 0)  # Blue for Bluetooth sources
+    object_color = (0, 0, 255)  # Red for detected objects
     text_color = (255, 255, 255)  # White text
 
-    # Function to overlay a box, icon, and text
-    def overlay_source(position, icon, label, color):
+    def overlay_box(position, label, color, icon=None):
+        """
+        Overlays a box with optional icon and label text.
+        """
         x, y = position
         box_w, box_h = 150, 100  # Box size
 
-        # Draw a rectangle for the source
+        # Draw the rectangle
         cv2.rectangle(frame, (x, y), (x + box_w, y + box_h), color, 2)
 
         # Overlay the icon in the top-left corner of the box
@@ -66,13 +75,13 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal):
             except Exception as e:
                 logging.error(f"Error overlaying icon at {position}: {e}")
 
-        # Add label text below the icon
+        # Add label text
         text_x = x + 30
         text_y = y + 20
         cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
                     font_scale, text_color, font_thickness)
 
-    # Check if a specific signal is being tracked
+    # Track a specific signal if selected
     if selected_signal and selected_signal["type"] and selected_signal["name"]:
         signal_type = selected_signal["type"]
         signal_name = selected_signal["name"]
@@ -81,38 +90,50 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal):
         if signal_type == "wifi" and wifi_signals:
             for network in wifi_signals:
                 if network["SSID"] == signal_name:
-                    x = frame_width // 2 - 75  # Center box horizontally
-                    y = frame_height // 2 - 50  # Center box vertically
+                    x = frame_width // 2 - 75
+                    y = frame_height // 2 - 50
                     label = f"{network['SSID']} ({network['signal']} dBm)"
-                    overlay_source((x, y), WIFI_ICON, label, wifi_color)
+                    overlay_box((x, y), label, wifi_color, WIFI_ICON)
 
         # Track Bluetooth signal
         elif signal_type == "bluetooth" and bluetooth_signals:
             for device in bluetooth_signals:
                 if device["name"] == signal_name:
-                    x = frame_width // 2 - 75  # Center box horizontally
-                    y = frame_height // 2 - 50  # Center box vertically
+                    x = frame_width // 2 - 75
+                    y = frame_height // 2 - 50
                     label = f"{device['name']} ({device['rssi']} dBm)"
-                    overlay_source((x, y), BLUETOOTH_ICON, label, bluetooth_color)
+                    overlay_box((x, y), label, bluetooth_color, BLUETOOTH_ICON)
+
     else:
-        # No signal being tracked; show all available signals
+        # No signal selected; display all available signals
 
-        # Process Wi-Fi signals
-        if wifi_signals:
-            logging.info(f"Overlaying {len(wifi_signals)} Wi-Fi networks.")
-            for network in wifi_signals:
-                x = random.randint(50, frame_width - 200)
-                y = random.randint(50, frame_height - 200)
-                label = f"{network['SSID']} ({network['signal']} dBm)"
-                overlay_source((x, y), WIFI_ICON, label, wifi_color)
+        # Overlay Wi-Fi signals
+        for network in wifi_signals:
+            x = random.randint(50, frame_width - 200)
+            y = random.randint(50, frame_height - 200)
+            label = f"{network['SSID']} ({network['signal']} dBm)"
+            overlay_box((x, y), label, wifi_color, WIFI_ICON)
 
-        # Process Bluetooth signals
-        if bluetooth_signals:
-            logging.info(f"Overlaying {len(bluetooth_signals)} Bluetooth devices.")
-            for device in bluetooth_signals:
-                x = random.randint(50, frame_width - 200)
-                y = random.randint(50, frame_height - 200)
-                label = f"{device['name']} ({device['rssi']} dBm)"
-                overlay_source((x, y), BLUETOOTH_ICON, label, bluetooth_color)
+        # Overlay Bluetooth signals
+        for device in bluetooth_signals:
+            x = random.randint(50, frame_width - 200)
+            y = random.randint(50, frame_height - 200)
+            label = f"{device['name']} ({device['rssi']} dBm)"
+            overlay_box((x, y), label, bluetooth_color, BLUETOOTH_ICON)
+
+    # Overlay detected objects
+    if detected_objects:
+        for obj in detected_objects:
+            bbox = obj["bbox"]  # Bounding box (x, y, w, h)
+            label = obj["label"]
+            x, y, w, h = bbox
+
+            # Draw the bounding box
+            cv2.rectangle(frame, (x, y), (x + w, y + h), object_color, 2)
+
+            # Add label text above the box
+            text_x, text_y = x, y - 10
+            cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale, text_color, font_thickness)
 
     return frame
