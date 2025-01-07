@@ -3,6 +3,8 @@ import subprocess
 from hud import overlay_hud
 from utils.autodetect import autodetect
 from utils.signal_detection import detect_wifi, detect_bluetooth
+from flipper import fetch_flipper_data
+from utils.triangulation import triangulate
 import threading
 import time
 import cv2
@@ -19,6 +21,7 @@ app = Flask(__name__)
 # Shared data structures for signals
 wifi_signals = []
 bluetooth_signals = []
+flipper_signals = []
 selected_signal = {"type": None, "name": None}  # Store signal type and name to track
 
 # Lock for thread-safe operations
@@ -27,17 +30,19 @@ lock = threading.Lock()
 
 def update_signals():
     """
-    Periodically updates Wi-Fi and Bluetooth signals in a separate thread.
+    Periodically updates Wi-Fi, Bluetooth, and Flipper Zero signals in a separate thread.
     """
-    global wifi_signals, bluetooth_signals
+    global wifi_signals, bluetooth_signals, flipper_signals
     while True:
         with lock:
             try:
-                logging.info("Updating Wi-Fi and Bluetooth signals.")
+                logging.info("Updating signals from all sources.")
                 wifi_signals = detect_wifi()  # Fetch live Wi-Fi signals
                 bluetooth_signals = detect_bluetooth()  # Fetch live Bluetooth signals
-                logging.info(f"Detected Wi-Fi: {wifi_signals}")
-                logging.info(f"Detected Bluetooth: {bluetooth_signals}")
+                flipper_signals = fetch_flipper_data()  # Fetch data from Flipper Zero
+                logging.info(f"Wi-Fi: {wifi_signals}")
+                logging.info(f"Bluetooth: {bluetooth_signals}")
+                logging.info(f"Flipper Zero: {flipper_signals}")
             except Exception as e:
                 logging.error(f"Signal update error: {e}")
         time.sleep(5)
@@ -103,8 +108,22 @@ def generate_frames():
 
                 with lock:
                     try:
-                        # Integrate detected objects into the HUD overlay
-                        frame = overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal, detected_objects)
+                        # Combine all signals
+                        combined_signals = wifi_signals + bluetooth_signals + flipper_signals
+
+                        # Triangulate signal sources
+                        for signal in combined_signals:
+                            signal_positions = signal.get("positions", [])
+                            if signal_positions:
+                                signal["position"] = triangulate(
+                                    positions=signal_positions,
+                                    distances=signal.get("distances", []),
+                                )
+
+                        # Integrate detected objects and signals into the HUD overlay
+                        frame = overlay_hud(
+                            frame, wifi_signals, bluetooth_signals, flipper_signals, selected_signal, detected_objects
+                        )
                         logging.info("HUD overlay applied successfully.")
                     except Exception as e:
                         logging.error(f"Error applying HUD overlay: {e}")
@@ -133,16 +152,18 @@ def index():
 @app.route("/signals", methods=["GET"])
 def get_signals():
     """
-    API to fetch the current Wi-Fi and Bluetooth signals.
+    API to fetch the current Wi-Fi, Bluetooth, and Flipper Zero signals.
     """
     with lock:
-        return jsonify({"wifi": wifi_signals, "bluetooth": bluetooth_signals})
+        return jsonify(
+            {"wifi": wifi_signals, "bluetooth": bluetooth_signals, "flipper": flipper_signals}
+        )
 
 
 @app.route("/track_signal", methods=["POST"])
 def track_signal():
     """
-    API to track a selected signal (Wi-Fi or Bluetooth).
+    API to track a selected signal (Wi-Fi, Bluetooth, or Flipper Zero).
     """
     data = request.json
     signal_type = data.get("type")

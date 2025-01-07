@@ -3,7 +3,6 @@ import os
 import logging
 import random
 
-
 # Configure logging for hud.py
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
 
@@ -28,15 +27,14 @@ if BLUETOOTH_ICON is None:
     logging.error(f"Unable to load Bluetooth icon from {BLUETOOTH_ICON_PATH}")
 
 
-def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal, detected_objects=None):
+def overlay_hud(frame, signals, selected_signal, detected_objects=None):
     """
-    Overlays detected Wi-Fi, Bluetooth sources, and objects as boxes with icons and information.
-    If a signal is selected for tracking, only that signal is displayed.
+    Overlays detected Wi-Fi, Bluetooth sources, and triangulated positions on the frame,
+    along with any detected objects as bounding boxes.
 
     Args:
         frame (numpy.ndarray): Current video frame.
-        wifi_signals (list): List of detected Wi-Fi signals.
-        bluetooth_signals (list): List of detected Bluetooth signals.
+        signals (list): List of combined signals (Wi-Fi, Bluetooth, and triangulated data).
         selected_signal (dict): Currently tracked signal type and name.
         detected_objects (list): List of detected objects with their bounding boxes and labels.
     """
@@ -47,6 +45,7 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal, detecte
     font_thickness = 2
     wifi_color = (0, 255, 0)  # Green for Wi-Fi sources
     bluetooth_color = (255, 0, 0)  # Blue for Bluetooth sources
+    triangulated_color = (0, 255, 255)  # Yellow for triangulated positions
     object_color = (0, 0, 255)  # Red for detected objects
     text_color = (255, 255, 255)  # White text
 
@@ -87,40 +86,25 @@ def overlay_hud(frame, wifi_signals, bluetooth_signals, selected_signal, detecte
         signal_type = selected_signal["type"]
         signal_name = selected_signal["name"]
 
-        # Track Wi-Fi signal
-        if signal_type == "wifi" and wifi_signals:
-            for network in wifi_signals:
-                if network["SSID"] == signal_name:
-                    x = frame_width // 2 - 75
-                    y = frame_height // 2 - 50
-                    label = f"{network['SSID']} ({network['signal']} dBm)"
-                    overlay_box((x, y), label, wifi_color, WIFI_ICON)
-
-        # Track Bluetooth signal
-        elif signal_type == "bluetooth" and bluetooth_signals:
-            for device in bluetooth_signals:
-                if device["name"] == signal_name:
-                    x = frame_width // 2 - 75
-                    y = frame_height // 2 - 50
-                    label = f"{device['name']} ({device['rssi']} dBm)"
-                    overlay_box((x, y), label, bluetooth_color, BLUETOOTH_ICON)
-
+        for signal in signals:
+            if signal.get("type") == signal_type and signal.get("name") == signal_name:
+                position = signal.get("position", (frame_width // 2, frame_height // 2))
+                label = f"{signal_name} ({signal.get('rssi', 'N/A')} dBm)"
+                color = wifi_color if signal_type == "wifi" else bluetooth_color
+                icon = WIFI_ICON if signal_type == "wifi" else BLUETOOTH_ICON
+                overlay_box(position, label, color, icon)
     else:
-        # No signal selected; display all available signals
-
-        # Overlay Wi-Fi signals
-        for network in wifi_signals:
-            x = random.randint(50, frame_width - 200)
-            y = random.randint(50, frame_height - 200)
-            label = f"{network['SSID']} ({network['signal']} dBm)"
-            overlay_box((x, y), label, wifi_color, WIFI_ICON)
-
-        # Overlay Bluetooth signals
-        for device in bluetooth_signals:
-            x = random.randint(50, frame_width - 200)
-            y = random.randint(50, frame_height - 200)
-            label = f"{device['name']} ({device['rssi']} dBm)"
-            overlay_box((x, y), label, bluetooth_color, BLUETOOTH_ICON)
+        # No specific signal selected; display all signals
+        for signal in signals:
+            position = signal.get("position")
+            label = f"{signal.get('name', 'Unknown')} ({signal.get('rssi', 'N/A')} dBm)"
+            color = triangulated_color if position else bluetooth_color
+            icon = WIFI_ICON if signal.get("type") == "wifi" else BLUETOOTH_ICON
+            position = position or (
+                random.randint(50, frame_width - 200),
+                random.randint(50, frame_height - 200),
+            )
+            overlay_box(position, label, color, icon)
 
     # Overlay detected objects
     if detected_objects:

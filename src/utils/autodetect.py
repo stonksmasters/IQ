@@ -1,8 +1,8 @@
+
 import cv2
 import numpy as np
 import os
 import logging
-import random  # Fix for "name 'random' is not defined"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
@@ -74,6 +74,33 @@ class AutoDetection:
 
         return objects
 
+    def associate_signals_with_objects(self, objects, signals):
+        """
+        Associates detected objects with signals (e.g., Wi-Fi, Bluetooth).
+        """
+        associated_data = []
+
+        for obj in objects:
+            obj_x, obj_y, obj_w, obj_h = obj["bbox"]
+            obj_center = (obj_x + obj_w // 2, obj_y + obj_h // 2)
+
+            best_match = None
+            best_distance = float("inf")
+
+            for signal in signals:
+                signal_position = signal.get("position")  # Triangulated position
+                if signal_position:
+                    distance = np.linalg.norm(
+                        np.array(obj_center) - np.array(signal_position)
+                    )
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_match = signal
+
+            if best_match:
+                associated_data.append({"object": obj, "signal": best_match})
+
+        return associated_data
 
 # Singleton instance
 autodetect = AutoDetection()
