@@ -15,7 +15,7 @@ import shutil
 import signal
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
 app = Flask(__name__)
 
@@ -28,6 +28,7 @@ selected_signal = {"type": None, "name": None}  # Store signal type and name to 
 # Lock for thread-safe operations
 lock = threading.Lock()
 
+
 def update_signals():
     """
     Periodically updates Wi-Fi, Bluetooth, and Flipper Zero signals in a separate thread.
@@ -36,20 +37,22 @@ def update_signals():
     while True:
         with lock:
             try:
-                logging.info("Updating signals from all sources.")
-                wifi_signals = detect_wifi()  # Fetch live Wi-Fi signals
-                bluetooth_signals = detect_bluetooth()  # Fetch live Bluetooth signals
-                flipper_signals = fetch_flipper_data()  # Fetch data from Flipper Zero
-                logging.info(f"Wi-Fi: {wifi_signals}")
-                logging.info(f"Bluetooth: {bluetooth_signals}")
-                logging.info(f"Flipper Zero: {flipper_signals}")
+                logging.info("Updating signals from all sources...")
+                wifi_signals = detect_wifi()
+                bluetooth_signals = detect_bluetooth()
+                flipper_signals = fetch_flipper_data()
+                logging.info(f"Wi-Fi signals: {wifi_signals}")
+                logging.info(f"Bluetooth signals: {bluetooth_signals}")
+                logging.info(f"Flipper signals: {flipper_signals}")
             except Exception as e:
                 logging.error(f"Signal update error: {e}")
         time.sleep(5)
 
+
 # Start the signal update thread
 signal_thread = threading.Thread(target=update_signals, daemon=True)
 signal_thread.start()
+
 
 def generate_frames():
     """
@@ -106,25 +109,18 @@ def generate_frames():
 
                 with lock:
                     try:
-                        # Combine all signals
-                        combined_signals = wifi_signals + bluetooth_signals + flipper_signals
+                        # Filter selected signal
+                        if selected_signal["type"] and selected_signal["name"]:
+                            filtered_signals = [
+                                signal for signal in (wifi_signals + bluetooth_signals + flipper_signals)
+                                if signal.get("type") == selected_signal["type"]
+                                and signal.get("name") == selected_signal["name"]
+                            ]
+                        else:
+                            filtered_signals = wifi_signals + bluetooth_signals + flipper_signals
 
-                        # Add triangulated positions for signals with sufficient data
-                        triangulated_devices = []
-                        for signal in combined_signals:
-                            signal_positions = signal.get("positions", [])
-                            distances = signal.get("distances", [])
-                            if len(signal_positions) >= 3 and len(distances) >= 3:
-                                try:
-                                    signal["position"] = triangulate(signal_positions, distances)
-                                    triangulated_devices.append(signal)
-                                except Exception as e:
-                                    logging.warning(f"Triangulation failed for {signal['name']}: {e}")
-
-                        # Integrate detected objects and signals into the HUD overlay
-                        frame = overlay_hud(
-                            frame, combined_signals, selected_signal, detected_objects
-                        )
+                        # Overlay data
+                        frame = overlay_hud(frame, filtered_signals, selected_signal, detected_objects)
                         logging.info("HUD overlay applied successfully.")
                     except Exception as e:
                         logging.error(f"Error applying HUD overlay: {e}")
@@ -141,6 +137,7 @@ def generate_frames():
         process.terminate()
         process.wait()
 
+
 @app.route("/")
 def index():
     """
@@ -148,20 +145,20 @@ def index():
     """
     return render_template("index.html")
 
+
 @app.route("/signals", methods=["GET"])
 def get_signals():
     """
     API to fetch the current Wi-Fi, Bluetooth, and Flipper Zero signals with triangulated positions.
     """
     with lock:
-        all_signals = wifi_signals + bluetooth_signals + flipper_signals
-        for signal in all_signals:
-            if "positions" in signal and "distances" in signal and len(signal["positions"]) >= 3:
-                try:
-                    signal["position"] = triangulate(signal["positions"], signal["distances"])
-                except Exception as e:
-                    signal["position"] = None
-                    logging.warning(f"Triangulation failed for {signal.get('name', 'Unknown')} due to: {e}")
+        all_signals = []
+        for signal in wifi_signals:
+            all_signals.append({**signal, "type": "wifi"})
+        for signal in bluetooth_signals:
+            all_signals.append({**signal, "type": "bluetooth"})
+        for signal in flipper_signals:
+            all_signals.append({**signal, "type": "flipper"})
 
     logging.info(f"Signals returned: {all_signals}")
     return jsonify({"signals": all_signals})
@@ -183,6 +180,7 @@ def track_signal():
 
     return jsonify({"status": "success"})
 
+
 @app.route("/clear_signal", methods=["POST"])
 def clear_signal():
     """
@@ -194,6 +192,7 @@ def clear_signal():
         logging.info("Cleared tracking signal.")
     return jsonify({"status": "success"})
 
+
 @app.route("/video_feed")
 def video_feed():
     """
@@ -201,22 +200,15 @@ def video_feed():
     """
     return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
-@app.route("/triangulated_devices", methods=["GET"])
-def get_triangulated_devices():
-    """
-    API to fetch the triangulated device positions.
-    """
-    with lock:
-        triangulated = []
-        for signal in wifi_signals + bluetooth_signals + flipper_signals:
-            if signal.get("position"):
-                triangulated.append(signal)
-    return jsonify(triangulated)
 
 def handle_exit(signum, frame):
+    """
+    Gracefully handle server shutdown.
+    """
     logging.info("Shutting down server...")
     signal_thread.join(timeout=1)
     exit(0)
+
 
 signal.signal(signal.SIGINT, handle_exit)
 signal.signal(signal.SIGTERM, handle_exit)

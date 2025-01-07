@@ -7,55 +7,68 @@
     <link rel="stylesheet" href="/static/css/styles.css">
     <script>
         async function fetchSignals() {
-            const response = await fetch('/signals');
-            const data = await response.json();
+            try {
+                const response = await fetch('/signals');
+                const data = await response.json();
 
-            const wifiList = document.getElementById('wifi-list');
-            const bluetoothList = document.getElementById('bluetooth-list');
+                const wifiList = document.getElementById('wifi-list');
+                const bluetoothList = document.getElementById('bluetooth-list');
 
-            wifiList.innerHTML = '';
-            bluetoothList.innerHTML = '';
+                wifiList.innerHTML = '';
+                bluetoothList.innerHTML = '';
 
-            data.signals.forEach(signal => {
-                const listItem = document.createElement('li');
-                const signalName = signal.name || signal.SSID || "Unknown";
-                const signalStrength = signal.rssi || signal.signal || "N/A";
-                const type = signal.type || "Unknown";
+                data.signals.forEach(signal => {
+                    const listItem = document.createElement('li');
+                    const signalName = signal.name || signal.SSID || "Unknown";
+                    const signalStrength = signal.rssi || signal.signal || "N/A";
+                    const type = signal.type || "Unknown";
 
-                listItem.innerHTML = `
-                    <div class="signal-info">
-                        <strong>${signalName}</strong> (${signalStrength} dBm)
-                    </div>
-                `;
-                const button = document.createElement('button');
-                button.textContent = 'Track';
-                button.className = 'track-button';
-                button.onclick = () => trackSignal(type, signalName);
+                    listItem.innerHTML = `
+                        <div class="signal-info">
+                            <strong>${signalName}</strong> (${signalStrength} dBm)
+                        </div>
+                    `;
+                    const button = document.createElement('button');
+                    button.textContent = 'Track';
+                    button.className = 'track-button';
+                    button.onclick = () => trackSignal(type, signalName);
 
-                listItem.appendChild(button);
-                if (type === "wifi") {
-                    wifiList.appendChild(listItem);
-                } else if (type === "bluetooth") {
-                    bluetoothList.appendChild(listItem);
-                }
-            });
+                    listItem.appendChild(button);
+                    if (type === "wifi") {
+                        wifiList.appendChild(listItem);
+                    } else if (type === "bluetooth") {
+                        bluetoothList.appendChild(listItem);
+                    }
+                });
+            } catch (error) {
+                console.error("Error fetching signals:", error);
+            }
         }
 
         async function trackSignal(type, name) {
-            await fetch('/track_signal', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type, name })
-            });
-            alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
+            try {
+                await fetch('/track_signal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type, name })
+                });
+                alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
+            } catch (error) {
+                console.error("Error tracking signal:", error);
+            }
         }
 
         async function clearSignal() {
-            await fetch('/clear_signal', { method: 'POST' });
-            alert('Tracking cleared.');
+            try {
+                await fetch('/clear_signal', { method: 'POST' });
+                alert('Tracking cleared.');
+            } catch (error) {
+                console.error("Error clearing signal:", error);
+            }
         }
 
-        setInterval(fetchSignals, 5000); // Refresh signals every 5 seconds
+        // Refresh signals every 5 seconds
+        setInterval(fetchSignals, 5000);
     </script>
     <style>
         body {
