@@ -2,23 +2,27 @@ import cv2
 import numpy as np
 import os
 import logging
-from utils.autodetect import autodetect
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
 
 class AutoDetection:
     def __init__(self):
         # Paths to model files
-        self.model_weights = os.path.join(os.path.dirname(__file__), "yolov4-tiny.weights")  # Pretrained YOLO weights
-        self.model_cfg = os.path.join(os.path.dirname(__file__), "yolov4-tiny.cfg")  # YOLO configuration file
-        self.classes_file = os.path.join(os.path.dirname(__file__), "electronics.names")  # Custom classes file
+        self.model_weights = os.path.join(os.path.dirname(__file__), "darknet/cfg/yolov4-tiny.weights")
+        self.model_cfg = os.path.join(os.path.dirname(__file__), "darknet/cfg/yolov4-tiny.cfg")
+        self.classes_file = os.path.join(os.path.dirname(__file__), "electronics.names")
 
-        # Ensure all files exist
-        for file_path in [self.model_weights, self.model_cfg, self.classes_file]:
-            if not os.path.exists(file_path):
-                logging.error(f"File not found: {file_path}")
-                raise FileNotFoundError(f"Required file missing: {file_path}")
+        # Verify the existence of the model files
+        if not os.path.exists(self.model_weights):
+            logging.error(f"Model weights not found at {self.model_weights}")
+            raise FileNotFoundError(f"Model weights not found at {self.model_weights}")
+        if not os.path.exists(self.model_cfg):
+            logging.error(f"Model config not found at {self.model_cfg}")
+            raise FileNotFoundError(f"Model config not found at {self.model_cfg}")
+        if not os.path.exists(self.classes_file):
+            logging.error(f"Classes file not found at {self.classes_file}")
+            raise FileNotFoundError(f"Classes file not found at {self.classes_file}")
 
         # Load YOLO network
         self.net = cv2.dnn.readNet(self.model_weights, self.model_cfg)
@@ -29,23 +33,16 @@ class AutoDetection:
         with open(self.classes_file, "r") as f:
             self.classes = f.read().strip().split("\n")
 
-        logging.info("YOLO model loaded successfully with the following classes:")
-        logging.info(self.classes)
+        logging.info("YOLO model loaded successfully.")
 
     def detect_objects(self, frame):
         """
         Detects objects in the given frame using YOLO.
-
-        Args:
-            frame (numpy.ndarray): The input video frame.
-
-        Returns:
-            list: Detected objects with their bounding boxes and labels.
         """
         height, width = frame.shape[:2]
 
         # Preprocess frame
-        blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), (0, 0, 0), swapRB=True, crop=False)
+        blob = cv2.dnn.blobFromImage(frame, 1/255.0, (416, 416), (0, 0, 0), swapRB=True, crop=False)
         self.net.setInput(blob)
 
         # Perform forward pass
@@ -59,7 +56,7 @@ class AutoDetection:
                 class_id = np.argmax(scores)
                 confidence = scores[class_id]
 
-                # Filter detections based on confidence threshold
+                # Filter detections
                 if confidence > 0.5:
                     box = detection[:4] * np.array([width, height, width, height])
                     (center_x, center_y, w, h) = box.astype("int")
@@ -71,7 +68,6 @@ class AutoDetection:
 
                     objects.append({"bbox": (x, y, int(w), int(h)), "label": label})
 
-        logging.info(f"Detected objects: {objects}")
         return objects
 
 

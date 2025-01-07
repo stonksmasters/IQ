@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response
 import subprocess
 from hud import overlay_hud
-from utils.autodetect import autodetect
+from utils.autodetect import autodetect  # Ensure autodetect is imported only once
 from utils.signal_detection import detect_wifi, detect_bluetooth
 import threading
 import time
