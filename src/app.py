@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response, Blueprint
 import subprocess
 from hud import overlay_hud
-from utils.autodetect import AutoDetection  # Correct import
+from utils.autodetect import AutoDetection
 from utils.signal_detection import detect_wifi, detect_bluetooth
 from flipper import fetch_flipper_data
 from utils.triangulation import triangulate
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize AutoDetection
+# Initialize AutoDetection for object detection
 autodetect = AutoDetection()
 
 # Shared data structures for signals
@@ -59,7 +59,8 @@ signals_data = {
     "bluetooth": [],
     "flipper": []
 }
-selected_signal = {"type": None, "name": None}  # Store signal type and name to track
+# Updated: track position within the selected signal
+selected_signal = {"type": None, "name": None, "position": None}
 
 # Lock for thread-safe operations
 signals_lock = threading.Lock()
@@ -67,10 +68,13 @@ signals_lock = threading.Lock()
 # Blueprint for main routes
 main_bp = Blueprint('main', __name__)
 
+
 def update_signals():
     """
     Periodically updates Wi-Fi, Bluetooth, and Flipper Zero signals in a separate thread.
+    Also updates the tracked signal's position if one is selected.
     """
+    global selected_signal
     while True:
         with signals_lock:
             try:
@@ -78,9 +82,19 @@ def update_signals():
                 signals_data["wifi"] = detect_wifi()
                 signals_data["bluetooth"] = detect_bluetooth()
                 signals_data["flipper"] = fetch_flipper_data()
-                logger.info(f"Wi-Fi signals: {signals_data['wifi']}")
-                logger.info(f"Bluetooth signals: {signals_data['bluetooth']}")
-                logger.info(f"Flipper signals: {signals_data['flipper']}")
+
+                # If a signal is being tracked, update its position
+                if selected_signal["type"] and selected_signal["name"]:
+                    # Iterate over relevant signals
+                    signal_list = signals_data[selected_signal["type"]]
+                    for sig in signal_list:
+                        # Match the tracked signal by name or address
+                        if sig.get("name") == selected_signal["name"]:
+                            selected_signal["position"] = sig.get("position")
+                            logger.info(
+                                f"Tracked signal position updated: {selected_signal['position']}"
+                            )
+                            break
             except Exception as e:
                 logger.error(f"Signal update error: {e}")
         time.sleep(config.get('signal_update_interval', 5))
@@ -101,12 +115,16 @@ def generate_frames():
         logger.error("libcamera-vid not found. Ensure it is installed and in the PATH.")
         return
 
+    # Camera settings from config
+    cam_width = str(config.get('camera', {}).get('width', 640))
+    cam_height = str(config.get('camera', {}).get('height', 480))
+
     process = subprocess.Popen(
         [
             "libcamera-vid",
             "--codec", "mjpeg",
-            "--width", str(config.get('camera', {}).get('width', 640)),
-            "--height", str(config.get('camera', {}).get('height', 480)),
+            "--width", cam_width,
+            "--height", cam_height,
             "-o", "-",
             "-t", "0",
             "--inline",
@@ -131,9 +149,11 @@ def generate_frames():
                 start = buffer.find(start_marker)
                 end = buffer.find(end_marker)
                 if start != -1 and end != -1 and end > start:
+                    # Extract the JPEG frame
                     jpeg = buffer[start:end + 2]
                     buffer = buffer[end + 2:]
 
+                    # Decode the frame
                     frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
                     if frame is None:
                         logger.warning("Failed to decode frame, skipping...")
@@ -146,8 +166,12 @@ def generate_frames():
 
                     with signals_lock:
                         try:
-                            # Aggregate all signals
-                            all_signals = signals_data["wifi"] + signals_data["bluetooth"] + signals_data["flipper"]
+                            # Aggregate all signals (Wi-Fi, Bluetooth, Flipper)
+                            all_signals = (
+                                signals_data["wifi"]
+                                + signals_data["bluetooth"]
+                                + signals_data["flipper"]
+                            )
 
                             # Overlay data
                             frame = overlay_hud(frame, all_signals, selected_signal, detected_objects)
@@ -182,16 +206,17 @@ def index():
 @main_bp.route("/signals", methods=["GET"])
 def get_signals():
     """
-    API to fetch the current Wi-Fi, Bluetooth, and Flipper Zero signals with triangulated positions.
+    API to fetch the current Wi-Fi, Bluetooth, and Flipper Zero signals
+    with triangulated positions if available.
     """
     with signals_lock:
         all_signals = []
-        for signal in signals_data["wifi"]:
-            all_signals.append({**signal, "type": "wifi"})
-        for signal in signals_data["bluetooth"]:
-            all_signals.append({**signal, "type": "bluetooth"})
-        for signal in signals_data["flipper"]:
-            all_signals.append({**signal, "type": "flipper"})
+        for wifi_sig in signals_data["wifi"]:
+            all_signals.append({**wifi_sig, "type": "wifi"})
+        for bt_sig in signals_data["bluetooth"]:
+            all_signals.append({**bt_sig, "type": "bluetooth"})
+        for fl_sig in signals_data["flipper"]:
+            all_signals.append({**fl_sig, "type": "flipper"})
 
     logger.info(f"Signals returned: {all_signals}")
     return jsonify({"signals": all_signals})
@@ -218,6 +243,7 @@ def track_signal():
     with signals_lock:
         selected_signal["type"] = signal_type
         selected_signal["name"] = signal_name
+        selected_signal["position"] = None  # Reset position initially
         logger.info(f"Tracking {signal_type} signal: {signal_name}")
 
     return jsonify({"status": "success", "tracked_signal": selected_signal})
@@ -231,6 +257,7 @@ def clear_signal():
     with signals_lock:
         selected_signal["type"] = None
         selected_signal["name"] = None
+        selected_signal["position"] = None
         logger.info("Cleared tracking signal.")
     return jsonify({"status": "success"})
 

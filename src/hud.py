@@ -44,10 +44,9 @@ def load_icon(path):
 WIFI_ICON = load_icon(WIFI_ICON_PATH)
 BLUETOOTH_ICON = load_icon(BLUETOOTH_ICON_PATH)
 
-
 def overlay_box(frame, position, label, color, icon=None, icon_size=(24, 24)):
     """
-    Overlays a box with an optional icon and label text on the frame.
+    Overlays a rectangular box with an optional icon and label text on the frame.
 
     Args:
         frame (numpy.ndarray): The video frame.
@@ -88,16 +87,20 @@ def overlay_box(frame, position, label, color, icon=None, icon_size=(24, 24)):
     cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale, text_color, font_thickness)
 
-
 def overlay_hud(frame, signals, selected_signal, detected_objects=None):
     """
     Overlays detected Wi-Fi, Bluetooth sources, and triangulated positions on the frame,
     along with any detected objects as bounding boxes.
 
+    If a signal is selected for tracking and has a known position, a red box labeled
+    'Tracking' is drawn around it. Otherwise, each signal is shown using a rectangular
+    box or (optionally) a circle+icon for Wi-Fi/Bluetooth.
+
     Args:
         frame (numpy.ndarray): Current video frame.
         signals (list): List of combined signals (Wi-Fi, Bluetooth, and triangulated data).
-        selected_signal (dict): Currently tracked signal type and name.
+        selected_signal (dict): Currently tracked signal, including "type", "name",
+                                and possibly "position" if known.
         detected_objects (list): List of detected objects with their bounding boxes and labels.
 
     Returns:
@@ -105,49 +108,66 @@ def overlay_hud(frame, signals, selected_signal, detected_objects=None):
     """
     frame_height, frame_width = frame.shape[:2]
 
-    # Define properties
+    # Define color properties
     colors = {
-        "wifi": (0, 255, 0),          # Green
-        "bluetooth": (255, 0, 0),     # Blue
-        "triangulated": (0, 255, 255),# Yellow
-        "object": (0, 0, 255),        # Red
+        "wifi": (0, 255, 0),        # Green for Wi-Fi
+        "bluetooth": (255, 0, 0),   # Blue for Bluetooth
+        "flipper": (0, 255, 255),   # Yellow for Flipper or triangulated
+        "object": (0, 0, 255)       # Red for detected objects
     }
-    text_color = (255, 255, 255)     # White
+    text_color = (255, 255, 255)   # White text
 
-    # Filter signals based on selection
-    if selected_signal and selected_signal["type"] and selected_signal["name"]:
-        filtered_signals = [
-            signal for signal in signals
-            if signal.get("type") == selected_signal["type"] and signal.get("name") == selected_signal["name"]
-        ]
-    else:
-        filtered_signals = signals
-
-    # Overlay each signal
-    for signal in filtered_signals:
+    # 1. Overlay signals
+    for signal in signals:
+        # Fallback position if none provided
         position = signal.get("position", (
             random.randint(50, frame_width - 200),
             random.randint(50, frame_height - 200)
         ))
         label = f"{signal.get('name', 'Unknown')} ({signal.get('rssi', 'N/A')} dBm)"
-        signal_type = signal.get("type", "unknown")
-        color = colors.get(signal_type, (255, 255, 255))  # Default to white if type unknown
-        icon = WIFI_ICON if signal_type == "wifi" else BLUETOOTH_ICON if signal_type == "bluetooth" else None
+        signal_type = signal.get("type", "flipper")  # Default to 'flipper' color if unknown
+        color = colors.get(signal_type, (255, 255, 255))
+
+        # Check if this is the tracked signal
+        if (signal_type == selected_signal.get("type") 
+                and signal.get("name") == selected_signal.get("name")):
+            # Draw a circle or a box in a different color (if desired)
+            color = (0, 0, 255)  # Red for tracked
+
+        # Decide which icon to use, if any
+        icon = None
+        if signal_type == "wifi":
+            icon = WIFI_ICON
+        elif signal_type == "bluetooth":
+            icon = BLUETOOTH_ICON
+
+        # Draw the overlay box with icon
         overlay_box(frame, position, label, color, icon)
 
-    # Overlay detected objects
+    # 2. Draw a separate red box labeled "Tracking" if the tracked signal has a known position
+    if selected_signal.get("position"):
+        x, y = selected_signal["position"]
+        box_w, box_h = 50, 50  # Adjust box size as needed
+        tracked_color = (0, 0, 255)
+
+        # Draw a rectangle for the tracked signal
+        cv2.rectangle(frame, (x, y), (x + box_w, y + box_h), tracked_color, 2)
+        # Add a label for "Tracking"
+        cv2.putText(frame, "Tracking", (x, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, tracked_color, 2)
+
+    # 3. Overlay detected objects
     if detected_objects:
         for obj in detected_objects:
             bbox = obj.get("bbox", (0, 0, 0, 0))
             label = obj.get("label", "Object")
             x, y, w, h = bbox
 
-            # Draw the bounding box
+            # Draw bounding box for the detected object
             cv2.rectangle(frame, (x, y), (x + w, y + h), colors["object"], 2)
 
-            # Add label text above the box
-            text_x, text_y = x, y - 10
-            cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
+            # Add label text
+            cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
                         0.6, text_color, 2)
 
     return frame
