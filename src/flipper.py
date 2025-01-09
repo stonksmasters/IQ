@@ -1,4 +1,5 @@
 import serial
+import serial.tools.list_ports
 import subprocess
 import logging
 import time
@@ -6,28 +7,56 @@ import re
 from utils.triangulation import rssi_to_distance, triangulate
 
 # Configure logging for Flipper Zero
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
+    handlers=[
+        logging.FileHandler("flipper.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 
 def get_flipper_port():
     """
-    Identify the serial port of the Flipper Zero.
+    Identify the serial port of the Flipper Zero by matching VID and PID.
+
+    Returns:
+        str or None: Serial port path if found, else None.
     """
+    flipper_ports = []
     try:
-        result = subprocess.check_output("dmesg | grep tty", shell=True).decode()
-        for line in result.splitlines():
-            if "ttyACM" in line:  # Adjust for devices like /dev/ttyACM0, /dev/ttyACM1
-                port_match = re.search(r"(/dev/ttyACM\d+)", line)
-                if port_match:
-                    return port_match.group(1)
+        ports = serial.tools.list_ports.comports()
+        for port in ports:
+            # Replace '1A86:7523' with Flipper Zero's actual VID:PID
+            if 'VID:PID=1A86:7523' in port.hwid:
+                flipper_ports.append(port.device)
+        if flipper_ports:
+            logger.info(f"Flipper Zero found on port: {flipper_ports[0]}")
+            return flipper_ports[0]  # Return the first matched port
+        else:
+            logger.warning("No Flipper Zero device found.")
     except Exception as e:
-        logging.error(f"Error finding Flipper port: {e}")
+        logger.error(f"Error finding Flipper port: {e}")
     return None
+
 
 def is_flipper_connected():
     """
     Check if Flipper Zero is connected via USB.
+
+    Returns:
+        bool: True if connected, False otherwise.
     """
-    return get_flipper_port() is not None
+    port = get_flipper_port()
+    if port:
+        logger.info("Flipper Zero is connected.")
+        return True
+    else:
+        logger.info("Flipper Zero is not connected.")
+        return False
+
 
 def flipper_ble_scan(known_positions):
     """
@@ -42,15 +71,16 @@ def flipper_ble_scan(known_positions):
     """
     port = get_flipper_port()
     if not port:
-        logging.error("Flipper Zero port not found.")
+        logger.error("Flipper Zero port not found.")
         return []
 
     try:
         with serial.Serial(port, 9600, timeout=5) as ser:
+            ser.reset_input_buffer()
             ser.write(b"ble scan\r\n")  # Command to start BLE scan
-            logging.info("Initiating BLE scan on Flipper Zero...")
+            logger.info("Initiating BLE scan on Flipper Zero...")
             time.sleep(7)  # Wait for Flipper to complete scanning
-            response = ser.readlines()
+            response = ser.read_all().decode(errors='ignore')
             devices = parse_flipper_output(response, known_positions)
 
             # Perform triangulation for each detected device
@@ -62,34 +92,37 @@ def flipper_ble_scan(known_positions):
                             positions=device["positions"],
                             distances=device["distances"],
                         )
-                        logging.info(f"Triangulated position for {device['name']}: {device['position']}")
+                        logger.info(f"Triangulated position for {device['name']}: {device['position']}")
                         triangulated_devices.append(device)
                 except Exception as e:
-                    logging.error(f"Error triangulating device {device['name']}: {e}")
+                    logger.error(f"Error triangulating device {device['name']}: {e}")
 
-            logging.info(f"BLE devices found: {triangulated_devices}")
+            logger.info(f"BLE devices found: {triangulated_devices}")
             return triangulated_devices
+    except serial.SerialException as e:
+        logger.error(f"Serial communication error with Flipper Zero: {e}")
     except Exception as e:
-        logging.error(f"Error communicating with Flipper Zero: {e}")
-        return []
+        logger.error(f"Unexpected error during BLE scan: {e}")
+    return []
+
 
 def parse_flipper_output(output, known_positions):
     """
     Parse the Flipper Zero BLE scan response into a structured format.
 
     Args:
-        output (list): Raw output lines from the Flipper Zero BLE scan.
+        output (str): Raw output string from the Flipper Zero BLE scan.
         known_positions (dict): Mapping of device addresses to known (x, y) positions.
 
     Returns:
         list: List of BLE devices with calculated distances and positions for triangulation.
     """
     devices = []
-    for line in output:
+    for line in output.splitlines():
         try:
-            line_decoded = line.decode().strip()
-            if "Device" in line_decoded:  # Adjust based on Flipper output format
-                match = re.match(r"Device (.+) RSSI (-?\d+) dBm", line_decoded)
+            if "Device" in line:
+                # Example line format: "Device AA:BB:CC:DD:EE:FF RSSI -70 dBm"
+                match = re.match(r"Device\s+([0-9A-Fa-f:]+)\s+RSSI\s+(-?\d+)\s+dBm", line)
                 if match:
                     device_address = match.group(1).strip()
                     rssi = int(match.group(2))
@@ -110,8 +143,9 @@ def parse_flipper_output(output, known_positions):
 
                     devices.append(device)
         except Exception as e:
-            logging.warning(f"Error parsing line: {line} | Exception: {e}")
+            logger.warning(f"Error parsing line: '{line}' | Exception: {e}")
     return devices
+
 
 def fetch_flipper_data(known_positions={}):
     """
