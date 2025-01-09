@@ -12,7 +12,7 @@ class RTSPServer:
 
         # Factory setup
         self.factory = GstRtspServer.RTSPMediaFactory()
-        self.factory.set_launch('( videotestsrc ! x264enc tune=zerolatency ! rtph264pay name=pay0 pt=96 )')
+        self.factory.set_launch('( v4l2src device=/dev/video0 ! video/x-raw,width=1920,height=1080,framerate=30/1 ! videoconvert ! x264enc tune=zerolatency ! rtph264pay name=pay0 pt=96 )')
         self.factory.set_shared(True)
 
         # Attach factory to mount points
