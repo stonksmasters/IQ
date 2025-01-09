@@ -107,109 +107,80 @@ signal_thread.start()
 
 def generate_frames():
     """
-    Generates video frames by reading from libcamera-vid subprocess,
-    decoding frames, optionally skipping detection on some frames to improve
-    performance, overlaying HUD data, and yielding them for streaming.
+    Generates video frames using a GStreamer pipeline for Pi camera capture,
+    then re-encodes each frame as JPEG for MJPEG streaming via Flask.
+
+    This approach may be smoother than using libcamera-vid as a subprocess.
+    Still, for truly low latency, consider H.264 RTSP or WebRTC solutions.
     """
+    import cv2
 
-    libcamera_path = shutil.which("libcamera-vid")
-    if libcamera_path is None:
-        logger.error("libcamera-vid not found. Ensure it is installed and in the PATH.")
-        return
+    # Retrieve camera settings from config (with defaults)
+    cam_width = config.get('camera', {}).get('width', 640)
+    cam_height = config.get('camera', {}).get('height', 480)
+    cam_framerate = config.get('camera', {}).get('framerate', 24)
+    detection_skip = config.get('detection_skip', 1)  # skip detection on some frames
+    frame_count = 0
 
-    # Camera settings from config
-    cam_width = str(config.get('camera', {}).get('width', 640))
-    cam_height = str(config.get('camera', {}).get('height', 480))
-    cam_framerate = str(config.get('camera', {}).get('framerate', 24))  # fallback to 24
-    detection_skip = config.get('detection_skip', 1)  # e.g. 1 = detect every frame, 5 = detect every 5th
-    frame_count = 0  # For detection skipping
+    logger.info(f"GStreamer capture: {cam_width}x{cam_height} @ {cam_framerate} FPS")
+    logger.info(f"Detection skip: every {detection_skip} frame(s)")
 
-    logger.info(f"Starting libcamera-vid with resolution {cam_width}x{cam_height} at {cam_framerate} FPS")
-    logger.info(f"Detection skip set to {detection_skip} (detect every {detection_skip} frames)")
-
-    process = subprocess.Popen(
-        [
-            "libcamera-vid",
-            "--codec", "mjpeg",
-            "--width", cam_width,
-            "--height", cam_height,
-            "--framerate", cam_framerate,
-            "-o", "-",
-            "-t", "0",
-            "--inline",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+    # Build a GStreamer pipeline string for camera capture -> color convert -> appsink
+    # Adjust 'width/height/framerate' to your needs
+    gst_pipeline = (
+        f"libcamerasrc ! "
+        f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
+        f"videoconvert ! appsink drop=true"
     )
 
-    buffer = b""
-    start_marker = b"\xff\xd8"
-    end_marker = b"\xff\xd9"
+    # Initialize OpenCV capture with GStreamer
+    cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+    if not cap.isOpened():
+        logger.error("Failed to open GStreamer pipeline. Ensure GStreamer is installed & pipeline syntax is correct.")
+        return
 
     try:
         while True:
-            # Increase chunk size for faster reads:
-            chunk = process.stdout.read(8192)
-            if not chunk:
-                logger.error("Failed to read frame from camera (no data).")
+            ret, frame = cap.read()
+            if not ret:
+                logger.error("Failed to read frame from GStreamer pipeline.")
                 break
-            buffer += chunk
 
-            while True:
-                start = buffer.find(start_marker)
-                end = buffer.find(end_marker)
-                if start != -1 and end != -1 and end > start:
-                    # Extract the JPEG frame
-                    jpeg = buffer[start:end + 2]
-                    buffer = buffer[end + 2:]
+            frame_count += 1
 
-                    # Decode the frame
-                    frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
-                    if frame is None:
-                        logger.warning("Failed to decode frame, skipping...")
-                        continue
+            # Skip detection on some frames if detection_skip > 1
+            if detection_skip > 1 and (frame_count % detection_skip) != 0:
+                detected_objects = []
+            else:
+                detected_objects = autodetect.detect_objects(frame)
 
-                    frame_count += 1
-                    logger.debug(f"Decoded frame #{frame_count}")
-
-                    # Skip detection on some frames if detection_skip > 1
-                    if frame_count % detection_skip == 0:
-                        detected_objects = autodetect.detect_objects(frame)
-                    else:
-                        detected_objects = []  # Reuse last detection or skip entirely
-
-                    with signals_lock:
-                        try:
-                            # Combine signals (Wi-Fi, Bluetooth, Flipper)
-                            all_signals = (
-                                signals_data["wifi"] +
-                                signals_data["bluetooth"] +
-                                signals_data["flipper"]
-                            )
-
-                            # Overlay data
-                            frame = overlay_hud(frame, all_signals, selected_signal, detected_objects)
-                            logger.debug("HUD overlay applied successfully.")
-                        except Exception as e:
-                            logger.error(f"Error applying HUD overlay: {e}")
-
-                    # Encode frame for streaming
-                    _, buffer_encoded = cv2.imencode(".jpg", frame)
-                    frame_bytes = buffer_encoded.tobytes()
-
-                    yield (
-                        b"--frame\r\n"
-                        b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+            with signals_lock:
+                try:
+                    all_signals = (
+                        signals_data["wifi"]
+                        + signals_data["bluetooth"]
+                        + signals_data["flipper"]
                     )
-                else:
-                    # Need more data to complete a frame
-                    break
+                    frame = overlay_hud(frame, all_signals, selected_signal, detected_objects)
+                except Exception as e:
+                    logger.error(f"Error applying HUD overlay: {e}")
+
+            # Encode to JPEG for MJPEG streaming
+            success, buffer_encoded = cv2.imencode(".jpg", frame)
+            if not success:
+                logger.error("Failed to encode frame as JPEG.")
+                continue
+
+            frame_bytes = buffer_encoded.tobytes()
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+            )
     except Exception as e:
         logger.error(f"Error in generate_frames: {e}")
     finally:
-        logger.info("Terminating libcamera-vid process.")
-        process.terminate()
-        process.wait()
+        logger.info("Releasing GStreamer pipeline capture.")
+        cap.release()
 
 @main_bp.route("/")
 def index():
