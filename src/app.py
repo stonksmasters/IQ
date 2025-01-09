@@ -14,6 +14,7 @@ import logging
 import shutil
 import signal
 import yaml
+import bleak
 
 # ------------------------------
 # Configuration Management
