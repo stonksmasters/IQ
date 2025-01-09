@@ -88,7 +88,7 @@ main_bp = Blueprint('main', __name__)
 # ------------------------------
 
 # Path to HLS directory
-HLS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'hls')
+HLS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'static', 'hls'))
 os.makedirs(HLS_DIR, exist_ok=True)
 
 # GStreamer pipeline command for RTSP to HLS
@@ -118,7 +118,11 @@ def start_gst_pipeline():
     """
     try:
         logger.info("Starting GStreamer pipeline for RTSP to HLS conversion.")
-        gst_process = subprocess.Popen(GST_COMMAND, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        gst_process = subprocess.Popen(
+            GST_COMMAND,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
         logger.info("GStreamer pipeline started.")
         return gst_process
     except Exception as e:

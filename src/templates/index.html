@@ -172,75 +172,82 @@
   <!-- Include Video.js JS -->
   <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
 
-  <!-- Include videojs-contrib-hls (for older browsers if needed) -->
-  <!-- Not required for modern browsers as video.js supports HLS out of the box via native HLS or Media Source Extensions -->
-  
   <script>
+    // Fetch signals and update the signal lists
     async function fetchSignals() {
-        try {
-            const response = await fetch('/signals');
-            const data = await response.json();
+      try {
+        const response = await fetch('/signals');
+        const data = await response.json();
 
-            const wifiList = document.getElementById('wifi-list');
-            const bluetoothList = document.getElementById('bluetooth-list');
+        const wifiList = document.getElementById('wifi-list');
+        const bluetoothList = document.getElementById('bluetooth-list');
 
-            wifiList.innerHTML = '';
-            bluetoothList.innerHTML = '';
+        wifiList.innerHTML = '';
+        bluetoothList.innerHTML = '';
 
-            data.signals.forEach(signal => {
-                const listItem = document.createElement('li');
-                const signalName = signal.name || signal.SSID || "Unknown";
-                const signalStrength = signal.rssi || signal.signal || "N/A";
-                const type = signal.type || "Unknown";
+        data.signals.forEach(signal => {
+          const listItem = document.createElement('li');
+          const signalName = signal.name || signal.SSID || "Unknown";
+          const signalStrength = signal.rssi || signal.signal || "N/A";
+          const type = signal.type || "Unknown";
 
-                listItem.innerHTML = `
-                    <div class="signal-info">
-                        <strong>${signalName}</strong> (${signalStrength} dBm)
-                    </div>
-                `;
-                const button = document.createElement('button');
-                button.textContent = 'Track';
-                button.className = 'track-button';
-                button.onclick = () => trackSignal(type, signalName);
+          listItem.innerHTML = `
+            <div class="signal-info">
+              <strong>${signalName}</strong> (${signalStrength} dBm)
+            </div>
+          `;
+          const button = document.createElement('button');
+          button.textContent = 'Track';
+          button.className = 'track-button';
+          button.onclick = () => trackSignal(type, signalName);
 
-                listItem.appendChild(button);
-                if (type === "wifi") {
-                    wifiList.appendChild(listItem);
-                } else if (type === "bluetooth") {
-                    bluetoothList.appendChild(listItem);
-                }
-            });
-        } catch (error) {
-            console.error("Error fetching signals:", error);
-        }
+          listItem.appendChild(button);
+          if (type === "wifi") {
+            wifiList.appendChild(listItem);
+          } else if (type === "bluetooth") {
+            bluetoothList.appendChild(listItem);
+          }
+        });
+      } catch (error) {
+        console.error("Error fetching signals:", error);
+      }
     }
 
+    // Track a signal
     async function trackSignal(type, name) {
-        try {
-            await fetch('/track_signal', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type, name })
-            });
-            alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
-        } catch (error) {
-            console.error("Error tracking signal:", error);
-        }
+      try {
+        await fetch('/track_signal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, name })
+        });
+        alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
+      } catch (error) {
+        console.error("Error tracking signal:", error);
+      }
     }
 
+    // Clear tracked signals
     async function clearSignal() {
-        try {
-            await fetch('/clear_signal', { method: 'POST' });
-            alert('Tracking cleared.');
-        } catch (error) {
-            console.error("Error clearing signal:", error);
-        }
+      try {
+        await fetch('/clear_signal', { method: 'POST' });
+        alert('Tracking cleared.');
+      } catch (error) {
+        console.error("Error clearing signal:", error);
+      }
     }
 
     // Refresh signals every 5 seconds
     setInterval(fetchSignals, 5000);
 
-    window.onload = fetchSignals;
+    // Initialize Video.js player on load
+    window.onload = () => {
+      fetchSignals();
+      const player = videojs('live-video');
+      player.play().catch(error => {
+        console.warn('Autoplay was prevented:', error);
+      });
+    };
   </script>
 </head>
 <body>
@@ -272,6 +279,8 @@
           preload="auto"
           width="100%"
           height="100%"
+          muted
+          autoplay
           data-setup='{}'
         >
           <source src="/hls/playlist.m3u8" type="application/x-mpegURL">
@@ -280,11 +289,5 @@
       </div>
     </div>
   </div>
-
-  <script>
-    // Initialize Video.js player
-    var player = videojs('live-video');
-    player.play();
-  </script>
 </body>
 </html>
