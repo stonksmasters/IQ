@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Paths to the icons
-WIFI_ICON_PATH = os.path.join(BASE_DIR, "../static/images/icons/wifi_icon.png")
-BLUETOOTH_ICON_PATH = os.path.join(BASE_DIR, "../static/images/icons/bluetooth_icon.png")
+WIFI_ICON_PATH = os.path.join(BASE_DIR, "../src/static/images/icons/wifi_icon.png")
+BLUETOOTH_ICON_PATH = os.path.join(BASE_DIR, "../src/static/images/icons/bluetooth_icon.png")
 
 # Normalize paths
 WIFI_ICON_PATH = os.path.normpath(WIFI_ICON_PATH)
