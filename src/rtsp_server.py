@@ -23,7 +23,7 @@ class RTSPServer:
 
         # Start the server
         self.server.attach(None)
-        print("RTSP server is running at rtsp://<your-ip>:8554/test")
+        print("RTSP server is running at rtsp://192.168.0.143:8554/test")
 
     def on_client_connected(self, server, client):
         print("Client connected:", client)
