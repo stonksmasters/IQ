@@ -108,8 +108,10 @@ signal_thread.start()
 def generate_frames():
     """
     Generates video frames by reading from libcamera-vid subprocess,
-    decoding JPEG frames, overlaying HUD data, and yielding them for streaming.
+    decoding frames, optionally skipping detection on some frames to improve
+    performance, overlaying HUD data, and yielding them for streaming.
     """
+
     libcamera_path = shutil.which("libcamera-vid")
     if libcamera_path is None:
         logger.error("libcamera-vid not found. Ensure it is installed and in the PATH.")
@@ -118,6 +120,12 @@ def generate_frames():
     # Camera settings from config
     cam_width = str(config.get('camera', {}).get('width', 640))
     cam_height = str(config.get('camera', {}).get('height', 480))
+    cam_framerate = str(config.get('camera', {}).get('framerate', 24))  # fallback to 24
+    detection_skip = config.get('detection_skip', 1)  # e.g. 1 = detect every frame, 5 = detect every 5th
+    frame_count = 0  # For detection skipping
+
+    logger.info(f"Starting libcamera-vid with resolution {cam_width}x{cam_height} at {cam_framerate} FPS")
+    logger.info(f"Detection skip set to {detection_skip} (detect every {detection_skip} frames)")
 
     process = subprocess.Popen(
         [
@@ -125,6 +133,7 @@ def generate_frames():
             "--codec", "mjpeg",
             "--width", cam_width,
             "--height", cam_height,
+            "--framerate", cam_framerate,
             "-o", "-",
             "-t", "0",
             "--inline",
@@ -139,9 +148,10 @@ def generate_frames():
 
     try:
         while True:
-            chunk = process.stdout.read(1024)
+            # Increase chunk size for faster reads:
+            chunk = process.stdout.read(8192)
             if not chunk:
-                logger.error("Failed to read frame from camera.")
+                logger.error("Failed to read frame from camera (no data).")
                 break
             buffer += chunk
 
@@ -159,18 +169,22 @@ def generate_frames():
                         logger.warning("Failed to decode frame, skipping...")
                         continue
 
-                    logger.debug("Frame successfully decoded.")
+                    frame_count += 1
+                    logger.debug(f"Decoded frame #{frame_count}")
 
-                    # Perform object detection
-                    detected_objects = autodetect.detect_objects(frame)
+                    # Skip detection on some frames if detection_skip > 1
+                    if frame_count % detection_skip == 0:
+                        detected_objects = autodetect.detect_objects(frame)
+                    else:
+                        detected_objects = []  # Reuse last detection or skip entirely
 
                     with signals_lock:
                         try:
-                            # Aggregate all signals (Wi-Fi, Bluetooth, Flipper)
+                            # Combine signals (Wi-Fi, Bluetooth, Flipper)
                             all_signals = (
-                                signals_data["wifi"]
-                                + signals_data["bluetooth"]
-                                + signals_data["flipper"]
+                                signals_data["wifi"] +
+                                signals_data["bluetooth"] +
+                                signals_data["flipper"]
                             )
 
                             # Overlay data
@@ -182,18 +196,20 @@ def generate_frames():
                     # Encode frame for streaming
                     _, buffer_encoded = cv2.imencode(".jpg", frame)
                     frame_bytes = buffer_encoded.tobytes()
+
                     yield (
                         b"--frame\r\n"
                         b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
                     )
                 else:
-                    break  # Wait for more data to complete the frame
+                    # Need more data to complete a frame
+                    break
     except Exception as e:
         logger.error(f"Error in generate_frames: {e}")
     finally:
+        logger.info("Terminating libcamera-vid process.")
         process.terminate()
         process.wait()
-
 
 @main_bp.route("/")
 def index():
