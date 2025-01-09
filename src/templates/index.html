@@ -6,6 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/styles.css">
 
+  <!-- Include Video.js CSS -->
+  <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
+
   <style>
     /* Base styling */
     body {
@@ -139,14 +142,6 @@
       justify-content: center;
     }
 
-    .video-container img {
-      max-width: 100%;
-      max-height: 100%;
-      border: 2px solid #ddd;
-      border-radius: 8px;
-      object-fit: cover;
-    }
-
     /* Responsive tweaks */
     @media (max-width: 768px) {
       .container {
@@ -174,6 +169,12 @@
     }
   </style>
 
+  <!-- Include Video.js JS -->
+  <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
+
+  <!-- Include videojs-contrib-hls (for older browsers if needed) -->
+  <!-- Not required for modern browsers as video.js supports HLS out of the box via native HLS or Media Source Extensions -->
+  
   <script>
     async function fetchSignals() {
         try {
@@ -264,9 +265,26 @@
     <div class="video-section">
       <h2 class="video-title">Live Video Feed</h2>
       <div class="video-container">
-        <img src="/video_feed" alt="Live Feed">
+        <video
+          id="live-video"
+          class="video-js vjs-default-skin"
+          controls
+          preload="auto"
+          width="100%"
+          height="100%"
+          data-setup='{}'
+        >
+          <source src="/hls/playlist.m3u8" type="application/x-mpegURL">
+          Your browser does not support the video tag.
+        </video>
       </div>
     </div>
   </div>
+
+  <script>
+    // Initialize Video.js player
+    var player = videojs('live-video');
+    player.play();
+  </script>
 </body>
 </html>

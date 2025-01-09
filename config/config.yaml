@@ -1,11 +1,67 @@
+# Configuration file for Signal Tracker and Live Video Feed
+
+# ------------------------------
+# Flipper Zero Configuration
+# ------------------------------
 flipper:
-  serial_port: "/dev/ttyUSB0"
-  baud_rate: 115200
-  scan_command: "SCAN"
+  serial_port: "/dev/ttyUSB0"    # Serial port connected to Flipper Zero
+  baud_rate: 115200              # Baud rate for serial communication
+  scan_command: "SCAN"           # Command to initiate scanning
 
+# ------------------------------
+# Wi-Fi Configuration
+# ------------------------------
 wifi:
-  interface: "wlan0"
-  scan_interval: 5  # in seconds
+  interface: "wlan0"             # Wi-Fi interface to scan
+  scan_interval: 5               # Interval between Wi-Fi scans in seconds
 
+# ------------------------------
+# Bluetooth Configuration
+# ------------------------------
 bluetooth:
-  scan_duration: 8  # in seconds
+  scan_duration: 8               # Duration of each Bluetooth scan in seconds
+
+# ------------------------------
+# RTSP Stream Configuration
+# ------------------------------
+rtsp_url: "rtsp://127.0.0.1:8554/test"  # RTSP stream URL
+
+# ------------------------------
+# HLS (HTTP Live Streaming) Configuration
+# ------------------------------
+hls_max_files: 5                  # Maximum number of HLS segments to keep
+hls_target_duration: 2            # Target duration (in seconds) for each HLS segment
+
+# ------------------------------
+# Camera Settings for Video Capture
+# ------------------------------
+camera:
+  width: 640                       # Width of the video feed in pixels
+  height: 480                      # Height of the video feed in pixels
+  framerate: 30                    # Frame rate of the video feed
+
+# ------------------------------
+# Signal Update Settings
+# ------------------------------
+signal_update_interval: 5          # Interval to update signal data in seconds
+
+# ------------------------------
+# Object Detection Settings
+# ------------------------------
+detection_skip: 1                  # Number of frames to skip between detections
+
+# ------------------------------
+# Debug Settings
+# ------------------------------
+debug: False                       # Enable Flask debug mode
+
+# ------------------------------
+# Additional Configurations
+# ------------------------------
+# You can add more configurations below as needed.
+# Ensure that each new configuration follows the YAML syntax.
+
+# Example:
+ logging:
+   level: "INFO"
+   file: "app.log"
