@@ -33,7 +33,7 @@ def load_icon(path):
         path (str): Path to the icon image.
 
     Returns:
-        numpy.ndarray or None: Loaded image or None if failed to load.
+        numpy.ndarray or None: Loaded image or None if it fails.
     """
     icon = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     if icon is None:
@@ -79,27 +79,33 @@ def overlay_box(frame, position, label, color, icon=None, icon_size=(24, 24)):
             logger.error(f"Error overlaying icon at {position}: {e}")
 
     # Add label text
-    text_x = x + icon_size[0] + 10  # Offset text to the right of the icon
+    text_x = x + icon_size[0] + 10
     text_y = y + 20
     font_scale = 0.6
     font_thickness = 2
-    text_color = (255, 255, 255)  # White text
-    cv2.putText(frame, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
-                font_scale, text_color, font_thickness)
+    text_color = (255, 255, 255)
+    cv2.putText(
+        frame, label, (text_x, text_y),
+        cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+        text_color, font_thickness
+    )
 
 def overlay_hud(frame, signals, selected_signal, detected_objects=None):
     """
     Overlays detected Wi-Fi, Bluetooth sources, and triangulated positions on the frame,
     along with any detected objects as bounding boxes.
 
-    If a signal is selected for tracking (i.e., "type" and "name" are set),
-    all other signals are filtered out so only that tracked signal is shown.
-    A separate red "Tracking" box is drawn if the tracked signal has a known position.
+    If a signal is selected for tracking ("type" and "name"), we attempt to filter
+    only that signal. If no match is found, a fallback "synthetic" signal is created
+    so at least something is displayed (helpful for debugging mismatches).
+
+    If selected_signal["position"] is known, a separate red 'Tracking' box is drawn
+    over that position for extra clarity.
 
     Args:
         frame (numpy.ndarray): Current video frame.
         signals (list): List of combined signals (Wi-Fi, Bluetooth, flipper, etc.).
-        selected_signal (dict): Currently tracked signal with "type", "name", and optionally "position".
+        selected_signal (dict): The tracked signal's data with "type", "name", and optional "position".
         detected_objects (list): List of detected objects (each with "bbox" and "label").
 
     Returns:
@@ -114,55 +120,82 @@ def overlay_hud(frame, signals, selected_signal, detected_objects=None):
         "flipper": (0, 255, 255),  # Yellow for Flipper or triangulated signals
         "object": (0, 0, 255)      # Red for detected objects
     }
-    text_color = (255, 255, 255)  # White text
+    tracked_color = (0, 0, 255)    # Extra highlight color for the tracked signal
+    text_color = (255, 255, 255)   # White text
 
-    # 1. If a signal is being tracked, filter out all other signals.
+    # --- 1. Filter signals if one is being tracked ---
     tracked_type = selected_signal.get("type")
     tracked_name = selected_signal.get("name")
+
     if tracked_type and tracked_name:
+        # Filter the signals to match the tracked one
         filtered_signals = [
             sig for sig in signals
-            if sig.get("type") == tracked_type and sig.get("name") == tracked_name
+            if sig.get("type") == tracked_type
+            and sig.get("name") == tracked_name
         ]
+
+        # If no matching signals were found, create a fallback signal
+        if not filtered_signals:
+            logger.warning(
+                f"No matching signal found for type='{tracked_type}', name='{tracked_name}'. "
+                "Creating a fallback entry for debugging."
+            )
+            fallback_signal = {
+                "type": tracked_type,
+                "name": tracked_name,
+                "rssi": "N/A",
+                # If the position is not known, place it randomly or use selected_signal.get("position")
+                "position": selected_signal.get("position") or (
+                    random.randint(50, frame_width - 200),
+                    random.randint(50, frame_height - 200)
+                )
+            }
+            filtered_signals = [fallback_signal]
     else:
-        # Otherwise, show all signals.
+        # If nothing is tracked, show everything
         filtered_signals = signals
 
-    # 2. Overlay each relevant signal
+    # --- 2. Overlay signals ---
     for signal in filtered_signals:
-        # Fall back to a random position if none is provided
+        # Fall back to random if missing position
         position = signal.get("position", (
             random.randint(50, frame_width - 200),
             random.randint(50, frame_height - 200)
         ))
         name = signal.get("name", "Unknown")
         rssi = signal.get("rssi", "N/A")
-        signal_type = signal.get("type", "flipper")  # Default color if unknown
+        signal_type = signal.get("type", "flipper")  # Default if unknown
+
+        # Generate the label
         label = f"{name} ({rssi} dBm)"
 
+        # Decide color
         color = colors.get(signal_type, (255, 255, 255))
+        # If it matches the tracked signal, highlight it
+        if (signal_type == tracked_type) and (name == tracked_name):
+            color = tracked_color
 
-        # Decide which icon to use based on signal type
-        icon = None
+        # Decide which icon to use
         if signal_type == "wifi":
             icon = WIFI_ICON
         elif signal_type == "bluetooth":
             icon = BLUETOOTH_ICON
+        else:
+            icon = None
 
-        # Draw the box (and icon) for this signal
+        # Draw the signal box
         overlay_box(frame, position, label, color, icon)
 
-    # 3. If the tracked signal has a known position, draw a red "Tracking" box
+    # --- 3. If the tracked signal has a known position, draw a "Tracking" box ---
     if selected_signal.get("position"):
         x, y = selected_signal["position"]
-        tracked_color = (0, 0, 255)
-        box_w, box_h = 50, 50  # Adjust as needed
-
+        box_w, box_h = 50, 50
         cv2.rectangle(frame, (x, y), (x + box_w, y + box_h), tracked_color, 2)
         cv2.putText(frame, "Tracking", (x, y - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, tracked_color, 2)
 
-    # 4. Overlay detected objects
+    # --- 4. Overlay detected objects ---
     if detected_objects:
         for obj in detected_objects:
             bbox = obj.get("bbox", (0, 0, 0, 0))  # (x, y, w, h)
@@ -172,7 +205,7 @@ def overlay_hud(frame, signals, selected_signal, detected_objects=None):
             # Draw bounding box for the detected object
             cv2.rectangle(frame, (x, y), (x + w, y + h), colors["object"], 2)
 
-            # Add label text above the bounding box
+            # Add label text
             cv2.putText(
                 frame, label, (x, y - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, text_color, 2

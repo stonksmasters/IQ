@@ -1,189 +1,272 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Signal Tracker</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
-    <script>
-        async function fetchSignals() {
-            try {
-                const response = await fetch('/signals');
-                const data = await response.json();
+  <meta charset="UTF-8">
+  <title>Signal Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/css/styles.css">
 
-                const wifiList = document.getElementById('wifi-list');
-                const bluetoothList = document.getElementById('bluetooth-list');
+  <style>
+    /* Base styling */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f9;
+      color: #333;
+    }
 
-                wifiList.innerHTML = '';
-                bluetoothList.innerHTML = '';
+    h1, h2 {
+      margin: 0;
+      padding: 0;
+      color: #007bff;
+    }
 
-                data.signals.forEach(signal => {
-                    const listItem = document.createElement('li');
-                    const signalName = signal.name || signal.SSID || "Unknown";
-                    const signalStrength = signal.rssi || signal.signal || "N/A";
-                    const type = signal.type || "Unknown";
+    /* Container Layout:
+       - signals on the left
+       - video feed on the right
+       - fixed or flexible widths with vertical scroll for signals
+    */
+    .container {
+      display: flex;
+      flex-direction: row;
+      height: 100vh; /* Occupy full viewport height */
+      overflow: hidden; /* Prevent page scroll */
+    }
 
-                    listItem.innerHTML = `
-                        <div class="signal-info">
-                            <strong>${signalName}</strong> (${signalStrength} dBm)
-                        </div>
-                    `;
-                    const button = document.createElement('button');
-                    button.textContent = 'Track';
-                    button.className = 'track-button';
-                    button.onclick = () => trackSignal(type, signalName);
+    /* Left column (signal lists) */
+    .signal-section {
+      width: 30%; /* Adjust as desired */
+      min-width: 300px;
+      max-width: 400px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #ddd;
+    }
 
-                    listItem.appendChild(button);
-                    if (type === "wifi") {
-                        wifiList.appendChild(listItem);
-                    } else if (type === "bluetooth") {
-                        bluetoothList.appendChild(listItem);
-                    }
-                });
-            } catch (error) {
-                console.error("Error fetching signals:", error);
-            }
+    .signal-header {
+      padding: 15px;
+      text-align: center;
+      background-color: #f8f9fa;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .signal-lists {
+      flex: 1;
+      overflow-y: auto; /* Enables scroll for the signal lists */
+      padding: 15px;
+    }
+
+    /* Each signal list (Wi-Fi, Bluetooth) */
+    .signal-lists h2 {
+      margin: 20px 0 10px;
+      font-size: 1.2rem;
+    }
+
+    ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: #f8f9fa;
+      margin-bottom: 10px;
+      padding: 10px 15px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      transition: transform 0.2s;
+    }
+
+    li:hover {
+      transform: scale(1.02);
+    }
+
+    .track-button {
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      padding: 5px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    .track-button:hover {
+      background-color: #0056b3;
+    }
+
+    .clear-button {
+      display: inline-block;
+      margin-top: 10px;
+      background-color: #dc3545;
+      color: #fff;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    .clear-button:hover {
+      background-color: #b02a37;
+    }
+
+    /* Right column (video feed) */
+    .video-section {
+      flex: 1; /* Takes remaining space */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 15px;
+    }
+
+    .video-title {
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .video-container {
+      width: 100%;
+      height: calc(100% - 60px); /* Reserve space for the title */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .video-container img {
+      max-width: 100%;
+      max-height: 100%;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+
+    /* Responsive tweaks */
+    @media (max-width: 768px) {
+      .container {
+        flex-direction: column;
+      }
+
+      .signal-section {
+        width: 100%;
+        max-width: none;
+        min-width: auto;
+        border-right: none;
+        border-bottom: 1px solid #ddd;
+        height: 40vh;
+      }
+
+      .video-section {
+        width: 100%;
+        height: 60vh;
+        padding: 10px;
+      }
+
+      .video-container {
+        height: 100%;
+      }
+    }
+  </style>
+
+  <script>
+    async function fetchSignals() {
+        try {
+            const response = await fetch('/signals');
+            const data = await response.json();
+
+            const wifiList = document.getElementById('wifi-list');
+            const bluetoothList = document.getElementById('bluetooth-list');
+
+            wifiList.innerHTML = '';
+            bluetoothList.innerHTML = '';
+
+            data.signals.forEach(signal => {
+                const listItem = document.createElement('li');
+                const signalName = signal.name || signal.SSID || "Unknown";
+                const signalStrength = signal.rssi || signal.signal || "N/A";
+                const type = signal.type || "Unknown";
+
+                listItem.innerHTML = `
+                    <div class="signal-info">
+                        <strong>${signalName}</strong> (${signalStrength} dBm)
+                    </div>
+                `;
+                const button = document.createElement('button');
+                button.textContent = 'Track';
+                button.className = 'track-button';
+                button.onclick = () => trackSignal(type, signalName);
+
+                listItem.appendChild(button);
+                if (type === "wifi") {
+                    wifiList.appendChild(listItem);
+                } else if (type === "bluetooth") {
+                    bluetoothList.appendChild(listItem);
+                }
+            });
+        } catch (error) {
+            console.error("Error fetching signals:", error);
         }
+    }
 
-        async function trackSignal(type, name) {
-            try {
-                await fetch('/track_signal', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type, name })
-                });
-                alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
-            } catch (error) {
-                console.error("Error tracking signal:", error);
-            }
+    async function trackSignal(type, name) {
+        try {
+            await fetch('/track_signal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, name })
+            });
+            alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
+        } catch (error) {
+            console.error("Error tracking signal:", error);
         }
+    }
 
-        async function clearSignal() {
-            try {
-                await fetch('/clear_signal', { method: 'POST' });
-                alert('Tracking cleared.');
-            } catch (error) {
-                console.error("Error clearing signal:", error);
-            }
+    async function clearSignal() {
+        try {
+            await fetch('/clear_signal', { method: 'POST' });
+            alert('Tracking cleared.');
+        } catch (error) {
+            console.error("Error clearing signal:", error);
         }
+    }
 
-        // Refresh signals every 5 seconds
-        setInterval(fetchSignals, 5000);
-    </script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f9;
-            color: #333;
-        }
+    // Refresh signals every 5 seconds
+    setInterval(fetchSignals, 5000);
 
-        h1 {
-            text-align: center;
-            margin: 20px 0;
-            color: #007bff;
-        }
-
-        .container {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-around;
-            align-items: flex-start;
-            margin: 20px;
-            gap: 20px;
-        }
-
-        .signal-section, .video-section {
-            flex: 1 1 45%;
-            max-width: 45%;
-            margin: 10px;
-            background: #fff;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .signal-section ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        .signal-section li {
-            margin: 10px 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background-color: #f8f9fa;
-            padding: 10px 15px;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            transition: transform 0.2s;
-        }
-
-        .signal-section li:hover {
-            transform: scale(1.02);
-        }
-
-        .track-button {
-            background-color: #007bff;
-            color: #fff;
-            border: none;
-            padding: 5px 15px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-
-        .track-button:hover {
-            background-color: #0056b3;
-        }
-
-        .clear-button {
-            display: block;
-            margin: 20px auto;
-            background-color: #dc3545;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-
-        .clear-button:hover {
-            background-color: #b02a37;
-        }
-
-        .video-section img {
-            width: 100%;
-            border-radius: 8px;
-            border: 2px solid #ddd;
-        }
-
-        @media (max-width: 768px) {
-            .signal-section, .video-section {
-                flex: 1 1 100%;
-                max-width: 100%;
-            }
-        }
-    </style>
+    window.onload = fetchSignals;
+  </script>
 </head>
 <body>
-    <h1>Signal Tracker</h1>
-    <div class="container">
-        <div class="signal-section">
-            <h2>Wi-Fi Signals</h2>
-            <ul id="wifi-list"></ul>
-            <h2>Bluetooth Signals</h2>
-            <ul id="bluetooth-list"></ul>
-            <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
-        </div>
-        <div class="video-section">
-            <h2>Live Video Feed</h2>
-            <img src="/video_feed" alt="Live Feed">
-        </div>
+  <div class="container">
+    <!-- Left Side: Signal Section -->
+    <div class="signal-section">
+      <div class="signal-header">
+        <h1>Signal Tracker</h1>
+      </div>
+      <div class="signal-lists">
+        <h2>Wi-Fi Signals</h2>
+        <ul id="wifi-list"></ul>
+
+        <h2>Bluetooth Signals</h2>
+        <ul id="bluetooth-list"></ul>
+
+        <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
+      </div>
     </div>
+
+    <!-- Right Side: Video Feed -->
+    <div class="video-section">
+      <h2 class="video-title">Live Video Feed</h2>
+      <div class="video-container">
+        <img src="/video_feed" alt="Live Feed">
+      </div>
+    </div>
+  </div>
 </body>
 </html>
