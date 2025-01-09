@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response, Blueprint
 import subprocess
 from hud import overlay_hud
-from utils.autodetect import ObjectDetector
+from utils.autodetect import AutoDetection
 from utils.signal_detection import detect_wifi, detect_bluetooth
 from flipper import fetch_flipper_data
 from utils.triangulation import triangulate
