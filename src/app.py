@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response, Blueprint
 import subprocess
 from hud import overlay_hud
-from utils.autodetect import AutoDetection
+from utils.autodetect import AutoDetection  # Correct import
 from utils.signal_detection import detect_wifi, detect_bluetooth
 from flipper import fetch_flipper_data
 from utils.triangulation import triangulate
@@ -50,13 +50,8 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize Object Detector
-object_detector = ObjectDetector(
-    config_path=config.get('autodetect', {}).get('config_path', 'path/to/cfg'),
-    weights_path=config.get('autodetect', {}).get('weights_path', 'path/to/weights'),
-    names_path=config.get('autodetect', {}).get('names_path', 'path/to/names'),
-    confidence_threshold=config.get('autodetect', {}).get('confidence_threshold', 0.5)
-)
+# Initialize AutoDetection
+autodetect = AutoDetection()
 
 # Shared data structures for signals
 signals_data = {
@@ -147,7 +142,7 @@ def generate_frames():
                     logger.debug("Frame successfully decoded.")
 
                     # Perform object detection
-                    detected_objects = object_detector.detect_objects(frame)
+                    detected_objects = autodetect.detect_objects(frame)
 
                     with signals_lock:
                         try:
