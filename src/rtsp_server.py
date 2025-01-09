@@ -3,7 +3,7 @@ print("PyGObject installed successfully!")
 
 gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
-from gi.repository import Gst, GstRtspServer, GObject
+from gi.repository import Gst, GstRtspServer, GLib
 
 class RTSPServer:
     def __init__(self):
@@ -16,5 +16,5 @@ class RTSPServer:
 
 Gst.init(None)
 server = RTSPServer()
-loop = GObject.MainLoop()
+loop = GLib.MainLoop()  # Updated to use GLib.MainLoop
 loop.run()
