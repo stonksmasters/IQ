@@ -57,42 +57,46 @@ def generate_frames():
     """
     Generates MJPEG frames from the Pi camera using GStreamer + OpenCV.
     """
+    # Fetch configuration values
     cam_width = config.get('camera', {}).get('width', 640)
     cam_height = config.get('camera', {}).get('height', 480)
     cam_framerate = config.get('camera', {}).get('framerate', 24)
 
+    # Define GStreamer pipeline
     gst_pipeline = (
         f"v4l2src device=/dev/video0 ! "
-        f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
-        f"videoconvert ! appsink drop=true"
+        f"video/x-raw,format=YUY2,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
+        f"videoconvert ! video/x-raw,format=BGR ! appsink"
     )
 
-    logger.info("Opening camera (/dev/video0) for MJPEG streaming...")
+    logger.info(f"Using GStreamer pipeline: {gst_pipeline}")
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
     if not cap.isOpened():
-        logger.error("Failed to open GStreamer pipeline for the camera.")
-        yield b""
+        logger.error("Failed to open GStreamer pipeline for the camera. Ensure the pipeline is correct and the camera is connected.")
+        yield b""  # Return empty bytes if camera initialization fails
         return
 
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
-                logger.error("Failed to grab frame from camera. Retrying...")
+                logger.warning("Failed to grab frame from camera. Retrying...")
                 cap.release()
+                time.sleep(0.5)  # Small delay before retrying
                 cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
                 continue
 
+            # Encode the frame in JPEG format
             success, buffer_encoded = cv2.imencode(".jpg", frame)
             if not success:
-                logger.error("JPEG encode failed.")
+                logger.error("JPEG encoding failed.")
                 continue
 
-            frame_bytes = buffer_encoded.tobytes()
+            # Yield the encoded frame
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + buffer_encoded.tobytes() + b"\r\n"
             )
     except Exception as e:
         logger.error(f"Error in generate_frames: {e}")
