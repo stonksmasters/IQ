@@ -176,17 +176,13 @@
     <div class="video-section">
       <h2 class="video-title">Live Video Feed</h2>
       <div class="video-container">
-        <img
-          src="/video_feed"
-          alt="Live Video Feed"
-          style="width: 100%; height: 100%; object-fit: cover;"
-        />
+        <!-- Updated to match /video_feed Flask endpoint -->
+        <img src="/video_feed" alt="Live Camera Feed" width="100%" height="100%">
       </div>
     </div>
   </div>
 
   <script>
-    // Fetch signals and update the signal lists
     async function fetchSignals() {
       try {
         const response = await fetch('/signals');
@@ -226,7 +222,6 @@
       }
     }
 
-    // Track a signal
     async function trackSignal(type, name) {
       try {
         await fetch('/track_signal', {
@@ -240,7 +235,6 @@
       }
     }
 
-    // Clear tracked signals
     async function clearSignal() {
       try {
         await fetch('/clear_signal', { method: 'POST' });
@@ -250,10 +244,8 @@
       }
     }
 
-    // Refresh signals every 5 seconds
     setInterval(fetchSignals, 5000);
 
-    // Initialize signals on load
     window.onload = fetchSignals;
   </script>
 </body>
