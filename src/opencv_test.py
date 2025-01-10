@@ -2,47 +2,41 @@ import cv2
 
 def test_camera():
     """
-    Test the camera using a GStreamer pipeline and display the live feed.
+    Tests the camera feed using a GStreamer pipeline.
+    Displays the video feed in a window.
     Press 'q' to exit the feed.
     """
-    # Define the GStreamer pipeline for accessing the camera
+    print("Attempting to open camera using GStreamer pipeline...")
+
+    # Define the GStreamer pipeline for your setup
     gst_pipeline = (
         "libcamerasrc ! "
-        "video/x-raw,format=YUY2,width=320,height=240,framerate=30/1 ! "
+        "video/x-raw,format=I420,width=1280,height=1080,framerate=30/1 ! "
         "videoconvert ! appsink"
     )
 
-    print("Attempting to open camera using GStreamer pipeline...")
+    # Initialize the VideoCapture object with GStreamer pipeline
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-
-    # Check if the camera was successfully opened
     if not cap.isOpened():
-        print("ERROR: Failed to open the camera.")
-        print("Ensure the camera is connected, accessible, and the GStreamer pipeline is correct.")
+        print("Failed to open the camera. Ensure the camera is connected and accessible.")
         return
 
-    print("Camera opened successfully. Press 'q' to exit the feed.")
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("ERROR: Failed to read frame from the camera.")
-                break
+    print("Camera opened successfully. Press 'q' to exit.")
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to read frame from the camera. Exiting...")
+            break
 
-            # Display the camera feed
-            cv2.imshow("Camera Feed", frame)
+        # Display the video feed in a window
+        cv2.imshow("Camera Feed", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            print("Exiting camera feed...")
+            break
 
-            # Exit if 'q' is pressed
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                print("Exiting camera feed...")
-                break
-    except KeyboardInterrupt:
-        print("\nCamera feed interrupted by user.")
-    finally:
-        # Release resources and close windows
-        cap.release()
-        cv2.destroyAllWindows()
-        print("Camera resources released. All windows closed.")
+    # Release the camera and close any OpenCV windows
+    cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     test_camera()
