@@ -2,23 +2,23 @@ import cv2
 
 def test_camera():
     """
-    Tests the camera feed using an updated GStreamer pipeline.
-    Displays the video feed in a window.
-    Press 'q' to exit the feed.
+    Tests the camera feed using a verified GStreamer pipeline.
     """
     print("Attempting to open camera using GStreamer pipeline...")
 
-    # Updated GStreamer pipeline
+    # Verified GStreamer pipeline
     gst_pipeline = (
         "libcamerasrc ! "
+        "videoconvert ! "
         "video/x-raw,format=I420,width=1280,height=1080,framerate=30/1 ! "
-        "videoconvert ! appsink"
+        "appsink"
     )
 
-    # Initialize VideoCapture
+    # Initialize VideoCapture with the pipeline
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
     if not cap.isOpened():
-        print("Failed to open the camera. Ensure the camera is connected and the pipeline is correct.")
+        print(f"Failed to open the camera using pipeline:\n{gst_pipeline}")
+        print("Ensure the camera is connected and accessible.")
         return
 
     print("Camera opened successfully. Press 'q' to exit.")
@@ -28,13 +28,13 @@ def test_camera():
             print("Failed to read frame from the camera. Exiting...")
             break
 
-        # Display the video feed in a window
+        # Display the video feed
         cv2.imshow("Camera Feed", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             print("Exiting camera feed...")
             break
 
-    # Release the camera and close any OpenCV windows
+    # Clean up
     cap.release()
     cv2.destroyAllWindows()
 
