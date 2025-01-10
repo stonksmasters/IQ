@@ -21,7 +21,7 @@ import yaml
 # Configuration Management
 # ------------------------------
 
-def load_config(config_path='config.yaml'):
+def load_config(config_path='config/config.yaml'):
     """
     Load configuration from a YAML file.
     """
