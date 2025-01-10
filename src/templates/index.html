@@ -6,9 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/styles.css">
 
-  <!-- Include Video.js CSS -->
-  <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
-
   <style>
     /* Base styling */
     body {
@@ -25,21 +22,16 @@
       color: #007bff;
     }
 
-    /* Container Layout:
-       - signals on the left
-       - video feed on the right
-       - fixed or flexible widths with vertical scroll for signals
-    */
+    /* Container Layout */
     .container {
       display: flex;
       flex-direction: row;
-      height: 100vh; /* Occupy full viewport height */
-      overflow: hidden; /* Prevent page scroll */
+      height: 100vh;
+      overflow: hidden;
     }
 
-    /* Left column (signal lists) */
     .signal-section {
-      width: 30%; /* Adjust as desired */
+      width: 30%;
       min-width: 300px;
       max-width: 400px;
       background: #fff;
@@ -57,11 +49,10 @@
 
     .signal-lists {
       flex: 1;
-      overflow-y: auto; /* Enables scroll for the signal lists */
+      overflow-y: auto;
       padding: 15px;
     }
 
-    /* Each signal list (Wi-Fi, Bluetooth) */
     .signal-lists h2 {
       margin: 20px 0 10px;
       font-size: 1.2rem;
@@ -119,9 +110,8 @@
       background-color: #b02a37;
     }
 
-    /* Right column (video feed) */
     .video-section {
-      flex: 1; /* Takes remaining space */
+      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -136,13 +126,12 @@
 
     .video-container {
       width: 100%;
-      height: calc(100% - 60px); /* Reserve space for the title */
+      height: calc(100% - 60px);
       display: flex;
       align-items: center;
       justify-content: center;
     }
 
-    /* Responsive tweaks */
     @media (max-width: 768px) {
       .container {
         flex-direction: column;
@@ -150,17 +139,13 @@
 
       .signal-section {
         width: 100%;
-        max-width: none;
-        min-width: auto;
         border-right: none;
         border-bottom: 1px solid #ddd;
         height: 40vh;
       }
 
       .video-section {
-        width: 100%;
         height: 60vh;
-        padding: 10px;
       }
 
       .video-container {
@@ -168,9 +153,37 @@
       }
     }
   </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Left Side: Signal Section -->
+    <div class="signal-section">
+      <div class="signal-header">
+        <h1>Signal Tracker</h1>
+      </div>
+      <div class="signal-lists">
+        <h2>Wi-Fi Signals</h2>
+        <ul id="wifi-list"></ul>
 
-  <!-- Include Video.js JS -->
-  <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
+        <h2>Bluetooth Signals</h2>
+        <ul id="bluetooth-list"></ul>
+
+        <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
+      </div>
+    </div>
+
+    <!-- Right Side: Video Feed -->
+    <div class="video-section">
+      <h2 class="video-title">Live Video Feed</h2>
+      <div class="video-container">
+        <img
+          src="/video_feed"
+          alt="Live Video Feed"
+          style="width: 100%; height: 100%; object-fit: cover;"
+        />
+      </div>
+    </div>
+  </div>
 
   <script>
     // Fetch signals and update the signal lists
@@ -240,54 +253,8 @@
     // Refresh signals every 5 seconds
     setInterval(fetchSignals, 5000);
 
-    // Initialize Video.js player on load
-    window.onload = () => {
-      fetchSignals();
-      const player = videojs('live-video');
-      player.play().catch(error => {
-        console.warn('Autoplay was prevented:', error);
-      });
-    };
+    // Initialize signals on load
+    window.onload = fetchSignals;
   </script>
-</head>
-<body>
-  <div class="container">
-    <!-- Left Side: Signal Section -->
-    <div class="signal-section">
-      <div class="signal-header">
-        <h1>Signal Tracker</h1>
-      </div>
-      <div class="signal-lists">
-        <h2>Wi-Fi Signals</h2>
-        <ul id="wifi-list"></ul>
-
-        <h2>Bluetooth Signals</h2>
-        <ul id="bluetooth-list"></ul>
-
-        <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
-      </div>
-    </div>
-
-    <!-- Right Side: Video Feed -->
-    <div class="video-section">
-      <h2 class="video-title">Live Video Feed</h2>
-      <div class="video-container">
-        <video
-          id="live-video"
-          class="video-js vjs-default-skin"
-          controls
-          preload="auto"
-          width="100%"
-          height="100%"
-          muted
-          autoplay
-          data-setup='{}'
-        >
-          <source src="/hls/playlist.m3u8" type="application/x-mpegURL">
-          Your browser does not support the video tag.
-        </video>
-      </div>
-    </div>
-  </div>
 </body>
 </html>
