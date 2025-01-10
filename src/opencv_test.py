@@ -1,5 +1,5 @@
 import cv2
-
+print(cv2.getBuildInformation())
 def test_camera():
     """
     Tests the camera feed using a verified GStreamer pipeline.
