@@ -8,11 +8,12 @@ def test_camera():
 
     # Verified GStreamer pipeline
     gst_pipeline = (
-        "libcamerasrc ! "
-        "videoconvert ! "
-        "video/x-raw,format=I420,width=1280,height=1080,framerate=30/1 ! "
-        "appsink"
-    )
+    "libcamerasrc ! "
+    "queue ! videoconvert ! "
+    "queue ! video/x-raw,format=BGR,width=1280,height=1080,framerate=30/1 ! "
+    "appsink"
+)
+
 
     # Initialize VideoCapture with the pipeline
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
