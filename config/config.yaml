@@ -51,17 +51,24 @@ signal_update_interval: 5          # Interval to update signal data in seconds
 detection_skip: 1                  # Number of frames to skip between detections
 
 # ------------------------------
+# Display Settings
+# ------------------------------
+local_display: true                # Toggle for local display (true for Pi screen, false for streaming)
+
+# ------------------------------
 # Debug Settings
 # ------------------------------
 debug: False                       # Enable Flask debug mode
+
+# ------------------------------
+# Logging Settings
+# ------------------------------
+logging:
+  level: "INFO"                    # Logging level (DEBUG, INFO, WARNING, ERROR)
+  file: "app.log"                  # Log file location
 
 # ------------------------------
 # Additional Configurations
 # ------------------------------
 # You can add more configurations below as needed.
 # Ensure that each new configuration follows the YAML syntax.
-
-# Example:
- logging:
-   level: "INFO"
-   file: "app.log"

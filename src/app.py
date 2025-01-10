@@ -85,14 +85,12 @@ signals_lock = threading.Lock()
 main_bp = Blueprint('main', __name__)
 
 # ------------------------------
-# HLS Configuration
+# HLS Configuration (Optional)
 # ------------------------------
 
-# Path to HLS directory
 HLS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'static', 'hls'))
 os.makedirs(HLS_DIR, exist_ok=True)
 
-# GStreamer pipeline command for RTSP to HLS
 GST_COMMAND = [
     "gst-launch-1.0",
     "-v",
@@ -115,15 +113,11 @@ GST_COMMAND = [
 
 def start_gst_pipeline():
     """
-    Starts the GStreamer pipeline to convert RTSP to HLS.
+    Starts the GStreamer pipeline to convert RTSP to HLS (optional).
     """
     try:
         logger.info("Starting GStreamer pipeline for RTSP to HLS conversion.")
-        gst_process = subprocess.Popen(
-            GST_COMMAND,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        gst_process = subprocess.Popen(GST_COMMAND, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         logger.info("GStreamer pipeline started.")
         return gst_process
     except Exception as e:
@@ -132,7 +126,7 @@ def start_gst_pipeline():
 
 def monitor_gst_pipeline(gst_process):
     """
-    Monitors the GStreamer pipeline and restarts it if it crashes.
+    Monitors the GStreamer pipeline and restarts it if it crashes (optional).
     """
     while True:
         if gst_process.poll() is not None:
@@ -140,7 +134,7 @@ def monitor_gst_pipeline(gst_process):
             gst_process = start_gst_pipeline()
         time.sleep(5)
 
-# Start GStreamer pipeline in a separate thread
+# Start the optional HLS pipeline in a separate thread
 gst_process = start_gst_pipeline()
 if gst_process:
     gst_thread = threading.Thread(target=monitor_gst_pipeline, args=(gst_process,), daemon=True)
@@ -166,101 +160,98 @@ def update_signals():
 
                 # If a signal is being tracked, update its position
                 if selected_signal["type"] and selected_signal["name"]:
-                    # Iterate over relevant signals
                     signal_list = signals_data[selected_signal["type"]]
                     for sig in signal_list:
-                        # Match the tracked signal by name or address
                         if sig.get("name") == selected_signal["name"]:
                             selected_signal["position"] = sig.get("position")
-                            logger.info(
-                                f"Tracked signal position updated: {selected_signal['position']}"
-                            )
+                            logger.info(f"Tracked signal position updated: {selected_signal['position']}")
                             break
             except Exception as e:
                 logger.error(f"Signal update error: {e}")
         time.sleep(config.get('signal_update_interval', 5))
 
-# Start the signal update thread
 signal_thread = threading.Thread(target=update_signals, daemon=True)
 signal_thread.start()
 
 # ------------------------------
-# Video Feed Generation (Optional)
+# Video Feed Generation
 # ------------------------------
 
 def generate_frames():
     """
-    Generates video frames using a GStreamer pipeline for Pi camera capture,
-    then re-encodes each frame as JPEG for MJPEG streaming via Flask.
-
-    Note: This is optional if you prefer HLS streaming. You can disable or remove
-    this function and related routes if not needed.
+    Generates video frames for either:
+    1) local display on the Pi (if config['local_display'] == True), or
+    2) MJPEG streaming if local_display is False.
     """
-    # Retrieve camera settings from config (with defaults)
+    local_display = config.get('local_display', False)
     cam_width = config.get('camera', {}).get('width', 640)
     cam_height = config.get('camera', {}).get('height', 480)
     cam_framerate = config.get('camera', {}).get('framerate', 24)
-    detection_skip = config.get('detection_skip', 1)  # skip detection on some frames
-    frame_count = 0
 
-    logger.info(f"GStreamer capture: {cam_width}x{cam_height} @ {cam_framerate} FPS")
-    logger.info(f"Detection skip: every {detection_skip} frame(s)")
+    if local_display:
+        # Pipeline for local display (shows window on Pi desktop)
+        gst_pipeline = (
+            f"v4l2src device=/dev/video0 ! "
+            f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
+            f"videoconvert ! autovideosink"
+        )
+    else:
+        # Pipeline for MJPEG streaming
+        gst_pipeline = (
+            f"v4l2src device=/dev/video0 ! "
+            f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
+            f"videoconvert ! appsink drop=true"
+        )
 
-    # Build a GStreamer pipeline string for camera capture -> color convert -> appsink
-    gst_pipeline = (
-        f"libcamerasrc ! "
-        f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
-        f"videoconvert ! appsink drop=true"
-    )
-
-    # Initialize OpenCV capture with GStreamer
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
     if not cap.isOpened():
-        logger.error("Failed to open GStreamer pipeline for camera capture.")
+        logger.error("Failed to open GStreamer pipeline.")
         return
 
-    try:
+    # Local Display Mode
+    if local_display:
+        logger.info("Displaying video locally on the Pi.")
         while True:
             ret, frame = cap.read()
             if not ret:
-                logger.error("Failed to read frame from GStreamer pipeline.")
+                logger.error("Failed to read frame from pipeline.")
                 break
 
-            frame_count += 1
-
-            # Skip detection on some frames if detection_skip > 1
-            if detection_skip > 1 and (frame_count % detection_skip) != 0:
-                detected_objects = []
-            else:
-                detected_objects = autodetect.detect_objects(frame)
-
-            with signals_lock:
-                try:
-                    all_signals = (
-                        signals_data["wifi"]
-                        + signals_data["bluetooth"]
-                        + signals_data["flipper"]
-                    )
-                    frame = overlay_hud(frame, all_signals, selected_signal, detected_objects)
-                except Exception as e:
-                    logger.error(f"Error applying HUD overlay: {e}")
-
-            # Encode to JPEG for MJPEG streaming
-            success, buffer_encoded = cv2.imencode(".jpg", frame)
-            if not success:
-                logger.error("Failed to encode frame as JPEG.")
-                continue
-
-            frame_bytes = buffer_encoded.tobytes()
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-            )
-    except Exception as e:
-        logger.error(f"Error in generate_frames: {e}")
-    finally:
-        logger.info("Releasing GStreamer pipeline capture.")
+            cv2.imshow("Camera Feed (Press 'q' to quit)", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
         cap.release()
+        cv2.destroyAllWindows()
+    else:
+        # MJPEG streaming mode
+        logger.info("Serving frames as MJPEG over /video_feed.")
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    logger.error("Failed to read frame from pipeline.")
+                    break
+
+                # Optionally, apply detection or overlay logic
+                # e.g.:
+                # detected_objects = autodetect.detect_objects(frame)
+                # frame = overlay_hud(frame, signals, selected_signal, detected_objects)
+
+                success, buffer_encoded = cv2.imencode(".jpg", frame)
+                if not success:
+                    logger.error("Failed to encode frame as JPEG.")
+                    continue
+
+                frame_bytes = buffer_encoded.tobytes()
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+        except Exception as e:
+            logger.error(f"Error in generate_frames: {e}")
+        finally:
+            logger.info("Releasing GStreamer pipeline.")
+            cap.release()
 
 # ------------------------------
 # Flask Routes
@@ -276,8 +267,7 @@ def index():
 @main_bp.route("/signals", methods=["GET"])
 def get_signals():
     """
-    API to fetch the current Wi-Fi, Bluetooth, and Flipper Zero signals
-    with triangulated positions if available.
+    Returns the current Wi-Fi, Bluetooth, and Flipper signals with positions.
     """
     with signals_lock:
         all_signals = []
@@ -294,7 +284,7 @@ def get_signals():
 @main_bp.route("/track_signal", methods=["POST"])
 def track_signal_route():
     """
-    API to track a selected signal (Wi-Fi, Bluetooth, or Flipper Zero).
+    API to track a selected signal (Wi-Fi, Bluetooth, or Flipper).
     """
     data = request.get_json()
     if not data:
@@ -312,7 +302,7 @@ def track_signal_route():
     with signals_lock:
         selected_signal["type"] = signal_type
         selected_signal["name"] = signal_name
-        selected_signal["position"] = None  # Reset position initially
+        selected_signal["position"] = None
         logger.info(f"Tracking {signal_type} signal: {signal_name}")
 
     return jsonify({"status": "success", "tracked_signal": selected_signal})
@@ -320,7 +310,7 @@ def track_signal_route():
 @main_bp.route("/clear_signal", methods=["POST"])
 def clear_signal_route():
     """
-    API to clear the selected signal and reset tracking.
+    Clears the selected signal and resets tracking.
     """
     with signals_lock:
         selected_signal["type"] = None
@@ -329,19 +319,30 @@ def clear_signal_route():
         logger.info("Cleared tracking signal.")
     return jsonify({"status": "success"})
 
+@main_bp.route("/toggle_display", methods=["POST"])
+def toggle_display():
+    """
+    Toggles between local display and MJPEG streaming by updating config in-memory.
+    """
+    data = request.get_json()
+    if not data or "local_display" not in data:
+        return jsonify({"status": "error", "message": "Missing 'local_display' parameter"}), 400
+
+    config['local_display'] = bool(data["local_display"])
+    logger.info(f"Local display mode set to: {config['local_display']}")
+    return jsonify({"status": "success", "local_display": config['local_display']})
+
 @main_bp.route("/video_feed")
 def video_feed():
     """
-    Provides the video feed with HUD overlays as a streaming response (MJPEG).
-
-    Note: This route is optional if you prefer using HLS. You can disable or remove it.
+    Provides MJPEG frames from the camera if local_display is False.
     """
     return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 @main_bp.route("/hls/<path:filename>")
 def hls_files(filename):
     """
-    Serves HLS playlist and segment files.
+    Serves HLS playlist and segment files if using HLS.
     """
     return send_from_directory(HLS_DIR, filename)
 
@@ -358,7 +359,7 @@ def handle_exit(signum, frame):
     # Stop the signal update thread
     signal_thread.join(timeout=2)
 
-    # Terminate GStreamer pipeline
+    # Terminate optional GStreamer pipeline
     if gst_process:
         gst_process.terminate()
         try:
@@ -371,7 +372,6 @@ def handle_exit(signum, frame):
     logger.info("Shutdown complete.")
     exit(0)
 
-# Register graceful shutdown
 signal.signal(signal.SIGINT, handle_exit)
 signal.signal(signal.SIGTERM, handle_exit)
 
@@ -389,7 +389,6 @@ if __name__ == "__main__":
     try:
         logger.info("Starting Flask server.")
         # Use a production-ready server like Gunicorn in production
-        # Example: gunicorn -w 4 app:app
         app.run(host="0.0.0.0", port=5000, debug=config.get('debug', False))
     except KeyboardInterrupt:
         logger.info("Shutting down server...")
