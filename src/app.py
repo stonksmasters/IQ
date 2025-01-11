@@ -64,10 +64,10 @@ def generate_frames():
     gst_pipeline = (
         f"v4l2src device=/dev/video0 ! "
         f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
-        f"videoconvert ! appsink drop=true"
+        f"videoconvert ! video/x-raw,format=BGR ! appsink"
     )
 
-    logger.info("Opening camera (/dev/video0) for MJPEG streaming...")
+    logger.info(f"Using GStreamer pipeline: {gst_pipeline}")
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
     if not cap.isOpened():
@@ -79,14 +79,13 @@ def generate_frames():
         while True:
             ret, frame = cap.read()
             if not ret:
-                logger.error("Failed to grab frame from camera. Retrying...")
-                cap.release()
-                cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+                logger.warning("Failed to grab frame from camera. Retrying...")
+                time.sleep(1)
                 continue
 
             success, buffer_encoded = cv2.imencode(".jpg", frame)
             if not success:
-                logger.error("JPEG encode failed.")
+                logger.error("JPEG encoding failed.")
                 continue
 
             frame_bytes = buffer_encoded.tobytes()
