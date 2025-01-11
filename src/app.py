@@ -5,11 +5,6 @@ import cv2
 import logging
 import signal
 import yaml
-import asyncio
-from utils.signal_detection import detect_wifi, detect_bluetooth, prepare_triangulation_data
-from utils.triangulation import calculate_distances_and_triangulate
-from src.flipper import fetch_flipper_data
-from src.hud import overlay_hud
 
 # ------------------------------
 # Configuration Management
@@ -23,9 +18,6 @@ def load_config(config_path='config/config.yaml'):
             config = yaml.safe_load(f)
         logging.info("Configuration loaded successfully.")
         return config
-    except FileNotFoundError:
-        logging.warning(f"Configuration file '{config_path}' not found. Using defaults.")
-        return {}
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
         return {}
@@ -57,91 +49,56 @@ signals_data = {
     "flipper": []
 }
 selected_signal = {"type": None, "name": None, "position": None}
-known_positions = {}  # Mapping of known device addresses to positions for triangulation
 
 # ------------------------------
 # Video Feed Generation (MJPEG)
 # ------------------------------
 def generate_frames():
     """
-    Generates MJPEG frames with HUD overlays from the Pi camera using GStreamer + OpenCV.
+    Generates MJPEG frames from the Pi camera using GStreamer + OpenCV.
     """
-    # Fetch configuration values
     cam_width = config.get('camera', {}).get('width', 640)
     cam_height = config.get('camera', {}).get('height', 480)
     cam_framerate = config.get('camera', {}).get('framerate', 24)
 
-    # Define GStreamer pipeline
     gst_pipeline = (
-        f"libcamerasrc ! queue ! "
-        f"videoconvert ! queue ! "
-        f"video/x-raw,format=BGR,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
-        f"appsink"
+        f"v4l2src device=/dev/video0 ! "
+        f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
+        f"videoconvert ! appsink drop=true"
     )
 
-    logger.info(f"Using GStreamer pipeline: {gst_pipeline}")
+    logger.info("Opening camera (/dev/video0) for MJPEG streaming...")
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
     if not cap.isOpened():
-        logger.error("Failed to open GStreamer pipeline. Check the camera connection and pipeline configuration.")
-        yield b""  # Return empty bytes if camera initialization fails
+        logger.error("Failed to open GStreamer pipeline for the camera.")
+        yield b""
         return
 
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
-                logger.warning("Failed to grab frame from camera. Retrying...")
-                time.sleep(0.5)
+                logger.error("Failed to grab frame from camera. Retrying...")
+                cap.release()
+                cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
                 continue
 
-            # Add HUD overlays
-            with signals_lock:
-                frame = overlay_hud(frame, signals_data["wifi"] + signals_data["bluetooth"] + signals_data["flipper"], selected_signal)
-
-            # Encode the frame in JPEG format
-            success, buffer = cv2.imencode(".jpg", frame)
+            success, buffer_encoded = cv2.imencode(".jpg", frame)
             if not success:
-                logger.error("JPEG encoding failed.")
+                logger.error("JPEG encode failed.")
                 continue
 
+            frame_bytes = buffer_encoded.tobytes()
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
             )
     except Exception as e:
         logger.error(f"Error in generate_frames: {e}")
     finally:
         cap.release()
         logger.info("Camera pipeline closed.")
-
-# ------------------------------
-# Signal Detection Thread
-# ------------------------------
-def detect_signals():
-    """
-    Continuously detects Wi-Fi, Bluetooth, and Flipper Zero signals.
-    """
-    global signals_data
-    while True:
-        try:
-            wifi_results = detect_wifi()
-            bluetooth_results = detect_bluetooth()
-            flipper_results = fetch_flipper_data(known_positions)
-
-            with signals_lock:
-                signals_data["wifi"] = wifi_results
-                signals_data["bluetooth"] = bluetooth_results
-                signals_data["flipper"] = flipper_results
-
-            logger.info(f"Signals detected: {len(wifi_results)} Wi-Fi, {len(bluetooth_results)} Bluetooth, {len(flipper_results)} Flipper")
-        except Exception as e:
-            logger.error(f"Error detecting signals: {e}")
-
-        time.sleep(10)  # Adjust the interval as needed
-
-signal_thread = threading.Thread(target=detect_signals, daemon=True)
-signal_thread.start()
 
 # ------------------------------
 # Flask Routes
@@ -159,7 +116,15 @@ def video_feed():
 @main_bp.route("/signals", methods=["GET"])
 def get_signals():
     with signals_lock:
-        all_signals = signals_data["wifi"] + signals_data["bluetooth"] + signals_data["flipper"]
+        all_signals = []
+        for w in signals_data["wifi"]:
+            all_signals.append({**w, "type": "wifi"})
+        for b in signals_data["bluetooth"]:
+            all_signals.append({**b, "type": "bluetooth"})
+        for f in signals_data["flipper"]:
+            all_signals.append({**f, "type": "flipper"})
+
+    logger.info(f"Signals returned: {all_signals}")
     return jsonify({"signals": all_signals})
 
 @main_bp.route("/track_signal", methods=["POST"])
@@ -167,7 +132,7 @@ def track_signal_route():
     data = request.get_json()
     with signals_lock:
         selected_signal.update({"type": data.get("type"), "name": data.get("name"), "position": None})
-        logger.info(f"Tracking signal: {selected_signal}")
+        logger.info(f"Tracking: {selected_signal}")
     return jsonify({"status": "success"})
 
 @main_bp.route("/clear_signal", methods=["POST"])
