@@ -3,7 +3,8 @@ import threading
 import time
 import cv2
 import logging
-import signal\import yaml
+import signal
+import yaml
 
 # ------------------------------
 # Configuration Management
