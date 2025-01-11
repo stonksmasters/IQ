@@ -7,6 +7,15 @@ from typing import List, Dict
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
+logger = logging.getLogger(__name__)
+
+# Configurable constants
+WIFI_SCAN_INTERFACE = "wlan0"  # Default Wi-Fi interface
+WIFI_SCAN_DURATION = 5  # Duration for BLE scanning
+PATH_LOSS_CONSTANTS = {
+    "wifi": {"A": -50, "n": 2},  # RSSI at 1 meter, Path loss exponent for Wi-Fi
+    "bluetooth": {"A": -59, "n": 2},  # RSSI at 1 meter, Path loss exponent for Bluetooth
+}
 
 def detect_wifi() -> List[Dict[str, any]]:
     """
@@ -15,7 +24,7 @@ def detect_wifi() -> List[Dict[str, any]]:
     """
     networks = []
     try:
-        result = subprocess.run(["iwlist", "wlan0", "scan"], capture_output=True, text=True)
+        result = subprocess.run(["iwlist", WIFI_SCAN_INTERFACE, "scan"], capture_output=True, text=True)
         output = result.stdout
         cells = output.split("Cell")
         for cell in cells[1:]:
@@ -26,22 +35,18 @@ def detect_wifi() -> List[Dict[str, any]]:
                 raw_signal = signal_line[0].split("=")[1].strip()
 
                 # Parse signal strength
-                if '/' in raw_signal:
-                    signal = raw_signal.split('/')[0]  # Take the first part before '/'
-                else:
-                    signal = raw_signal.split(" ")[0]
                 try:
-                    signal = int(signal)
+                    signal = int(raw_signal.split("/")[0] if '/' in raw_signal else raw_signal.split()[0])
                 except ValueError:
-                    logging.warning(f"Non-integer signal strength '{raw_signal}' for SSID '{ssid}'")
+                    logger.warning(f"Non-integer signal strength '{raw_signal}' for SSID '{ssid}'")
                     signal = 0
 
-                # Estimate distance (simple model, can be replaced with a more accurate one)
-                distance = calculate_wifi_distance(signal)
+                # Estimate distance
+                distance = calculate_distance(signal, PATH_LOSS_CONSTANTS["wifi"])
 
                 networks.append({"SSID": ssid, "signal": signal, "distance": distance})
     except Exception as e:
-        logging.error(f"Wi-Fi detection error: {e}")
+        logger.error(f"Wi-Fi detection error: {e}")
     return networks
 
 def detect_bluetooth() -> List[Dict[str, any]]:
@@ -54,7 +59,7 @@ def detect_bluetooth() -> List[Dict[str, any]]:
 
         def detection_callback(device, advertisement_data):
             rssi = advertisement_data.rssi
-            distance = calculate_bluetooth_distance(rssi)
+            distance = calculate_distance(rssi, PATH_LOSS_CONSTANTS["bluetooth"])
             devices.append({
                 "name": device.name or "Unknown",
                 "address": device.address,
@@ -65,47 +70,34 @@ def detect_bluetooth() -> List[Dict[str, any]]:
         try:
             scanner = BleakScanner(detection_callback=detection_callback)
             await scanner.start()
-            await asyncio.sleep(5)  # Scan for 5 seconds
+            await asyncio.sleep(WIFI_SCAN_DURATION)  # Scan duration
             await scanner.stop()
         except Exception as e:
-            logging.error(f"Bluetooth detection error: {e}")
+            logger.error(f"Bluetooth detection error: {e}")
 
         return devices
 
-    # Use asyncio to run the BLE scan
     return asyncio.run(scan_devices())
 
-def calculate_wifi_distance(signal: int) -> float:
+def calculate_distance(signal: int, constants: Dict[str, int]) -> float:
     """
-    Estimate the distance to a Wi-Fi signal based on its RSSI using a simplified path loss model.
-    """
-    # Constants for the path loss model
-    A = -50  # RSSI at 1 meter
-    n = 2  # Path loss exponent (typical indoor value)
+    Estimate the distance to a signal source based on its RSSI using a simplified path loss model.
 
+    Args:
+        signal (int): Received Signal Strength Indicator (RSSI).
+        constants (dict): Path loss model constants (e.g., "A" and "n").
+
+    Returns:
+        float: Estimated distance in meters.
+    """
     try:
+        A = constants["A"]
+        n = constants["n"]
         distance = 10 ** ((A - signal) / (10 * n))
+        return round(distance, 2)
     except Exception as e:
-        logging.warning(f"Error calculating Wi-Fi distance: {e}")
-        distance = float('inf')  # Return infinity if calculation fails
-
-    return round(distance, 2)
-
-def calculate_bluetooth_distance(rssi: int) -> float:
-    """
-    Estimate the distance to a Bluetooth signal based on its RSSI using a simplified path loss model.
-    """
-    # Constants for the path loss model
-    A = -59  # RSSI at 1 meter
-    n = 2  # Path loss exponent (typical indoor value)
-
-    try:
-        distance = 10 ** ((A - rssi) / (10 * n))
-    except Exception as e:
-        logging.warning(f"Error calculating Bluetooth distance: {e}")
-        distance = float('inf')  # Return infinity if calculation fails
-
-    return round(distance, 2)
+        logger.warning(f"Error calculating distance: {e}")
+        return float('inf')  # Return infinity if calculation fails
 
 def prepare_triangulation_data(wifi_results, bluetooth_results, known_positions):
     """
@@ -114,10 +106,10 @@ def prepare_triangulation_data(wifi_results, bluetooth_results, known_positions)
     Args:
         wifi_results (list): Detected Wi-Fi networks with distances.
         bluetooth_results (list): Detected Bluetooth devices with distances.
-        known_positions (dict): Mapping of device addresses/SSIDs to known (x, y) positions.
+        known_positions (dict): Mapping of device addresses/SSIDs to positions.
 
     Returns:
-        dict: Contains lists of triangulation-ready Wi-Fi and Bluetooth devices.
+        dict: Contains triangulation-ready Wi-Fi and Bluetooth devices.
     """
     wifi_triangulation = []
     bluetooth_triangulation = []
@@ -146,24 +138,23 @@ def prepare_triangulation_data(wifi_results, bluetooth_results, known_positions)
     }
 
 if __name__ == "__main__":
-    # Example known positions (e.g., Raspberry Pi, Flipper Zero)
     known_positions = {
-        "RaspberryPi": (0, 0),  # Example position for a Wi-Fi device
-        "FlipperZero": (5, 5),  # Example position for a Bluetooth device
+        "RaspberryPi": (0, 0),
+        "FlipperZero": (5, 5),
     }
 
     # Test Wi-Fi detection
-    logging.info("Scanning for Wi-Fi networks...")
+    logger.info("Scanning for Wi-Fi networks...")
     wifi_results = detect_wifi()
     for wifi in wifi_results:
-        logging.info(f"Wi-Fi: {wifi}")
+        logger.info(f"Wi-Fi: {wifi}")
 
     # Test Bluetooth detection
-    logging.info("Scanning for Bluetooth devices...")
+    logger.info("Scanning for Bluetooth devices...")
     bluetooth_results = detect_bluetooth()
     for bluetooth in bluetooth_results:
-        logging.info(f"Bluetooth: {bluetooth}")
+        logger.info(f"Bluetooth: {bluetooth}")
 
-    # Prepare data for triangulation
+    # Prepare triangulation data
     triangulation_data = prepare_triangulation_data(wifi_results, bluetooth_results, known_positions)
-    logging.info(f"Triangulation Data: {triangulation_data}")
+    logger.info(f"Triangulation Data: {triangulation_data}")
