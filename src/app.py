@@ -3,8 +3,7 @@ import threading
 import time
 import cv2
 import logging
-import signal
-import yaml
+import signal\import yaml
 
 # ------------------------------
 # Configuration Management
@@ -89,6 +88,7 @@ def generate_frames():
                 continue
 
             frame_bytes = buffer_encoded.tobytes()
+            logger.debug("Frame encoded successfully.")
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
@@ -110,6 +110,7 @@ def index():
 
 @main_bp.route("/video_feed")
 def video_feed():
+    logger.info("Video feed endpoint hit.")
     return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 @main_bp.route("/signals", methods=["GET"])
@@ -129,6 +130,7 @@ def get_signals():
 @main_bp.route("/track_signal", methods=["POST"])
 def track_signal_route():
     data = request.get_json()
+    logger.debug(f"Track signal request data: {data}")
     with signals_lock:
         selected_signal.update({"type": data.get("type"), "name": data.get("name"), "position": None})
         logger.info(f"Tracking: {selected_signal}")
@@ -138,6 +140,7 @@ def track_signal_route():
 def clear_signal_route():
     with signals_lock:
         selected_signal.update({"type": None, "name": None, "position": None})
+    logger.info("Tracking cleared.")
     return jsonify({"status": "success"})
 
 # ------------------------------
@@ -156,4 +159,5 @@ app.register_blueprint(main_bp)
 # Main
 # ------------------------------
 if __name__ == "__main__":
+    logger.info("Starting Flask app.")
     app.run(host="0.0.0.0", port=5000, debug=config.get('debug', False))
