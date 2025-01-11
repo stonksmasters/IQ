@@ -7,7 +7,7 @@ import signal
 import yaml
 import asyncio
 from utils.signal_detection import detect_wifi, detect_bluetooth, prepare_triangulation_data
-from src.utils.triangulation import calculate_distances_and_triangulate
+from utils.triangulation import calculate_distances_and_triangulate
 from src.flipper import fetch_flipper_data
 from src.hud import overlay_hud
 
