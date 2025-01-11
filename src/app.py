@@ -18,6 +18,9 @@ def load_config(config_path='config/config.yaml'):
             config = yaml.safe_load(f)
         logging.info("Configuration loaded successfully.")
         return config
+    except FileNotFoundError:
+        logging.warning(f"Configuration file '{config_path}' not found. Using defaults.")
+        return {}
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
         return {}
@@ -64,16 +67,17 @@ def generate_frames():
 
     # Define GStreamer pipeline
     gst_pipeline = (
-        f"v4l2src device=/dev/video0 ! "
-        f"video/x-raw,format=YUY2,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
-        f"videoconvert ! video/x-raw,format=BGR ! appsink"
+        f"libcamerasrc ! queue ! "
+        f"videoconvert ! queue ! "
+        f"video/x-raw,format=BGR,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
+        f"appsink"
     )
 
     logger.info(f"Using GStreamer pipeline: {gst_pipeline}")
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
     if not cap.isOpened():
-        logger.error("Failed to open GStreamer pipeline for the camera. Ensure the pipeline is correct and the camera is connected.")
+        logger.error("Failed to open GStreamer pipeline. Check the camera connection and pipeline configuration.")
         yield b""  # Return empty bytes if camera initialization fails
         return
 
@@ -82,21 +86,18 @@ def generate_frames():
             ret, frame = cap.read()
             if not ret:
                 logger.warning("Failed to grab frame from camera. Retrying...")
-                cap.release()
-                time.sleep(0.5)  # Small delay before retrying
-                cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+                time.sleep(0.5)
                 continue
 
             # Encode the frame in JPEG format
-            success, buffer_encoded = cv2.imencode(".jpg", frame)
+            success, buffer = cv2.imencode(".jpg", frame)
             if not success:
                 logger.error("JPEG encoding failed.")
                 continue
 
-            # Yield the encoded frame
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + buffer_encoded.tobytes() + b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
             )
     except Exception as e:
         logger.error(f"Error in generate_frames: {e}")
