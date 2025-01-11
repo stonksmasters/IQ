@@ -4,8 +4,8 @@ def test_camera():
     print("Attempting to open camera using GStreamer pipeline...")
     gst_pipeline = (
         "libcamerasrc ! "
-        "queue ! videoconvert ! "
-        "queue ! video/x-raw,format=BGR,width=1280,height=1080,framerate=30/1 ! "
+        "videoconvert ! "
+        "video/x-raw,format=BGR,width=1280,height=1080,framerate=30/1 ! "
         "appsink"
     )
 
