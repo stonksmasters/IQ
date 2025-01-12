@@ -59,14 +59,16 @@ def generate_frames():
     """
     Generates MJPEG frames from the Pi camera using GStreamer + OpenCV.
     """
-    cam_width = config.get('camera', {}).get('width', 640)
-    cam_height = config.get('camera', {}).get('height', 480)
-    cam_framerate = config.get('camera', {}).get('framerate', 24)
+    cam_width = config.get('camera', {}).get('width', 1280)
+    cam_height = config.get('camera', {}).get('height', 1080)
+    cam_framerate = config.get('camera', {}).get('framerate', 30)
 
     gst_pipeline = (
-        f"v4l2src device=/dev/video0 ! "
-        f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
-        f"videoconvert ! video/x-raw,format=BGR ! appsink sync=false"
+        "libcamerasrc ! "
+        "queue ! "
+        "videoconvert ! "
+        f"video/x-raw,format=BGR,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
+        "appsink sync=false"
     )
 
     logger.info(f"Using GStreamer pipeline: {gst_pipeline}")
@@ -74,7 +76,7 @@ def generate_frames():
 
     if not cap.isOpened():
         logger.error("Failed to open GStreamer pipeline for the camera. Check the pipeline and permissions.")
-        yield b""  # Return an empty response
+        yield b""
         return
 
     try:
