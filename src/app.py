@@ -1,3 +1,5 @@
+#/src/app.py
+
 from flask import Flask, render_template, request, jsonify, Response, Blueprint
 import threading
 import time
@@ -64,39 +66,50 @@ def generate_frames():
     gst_pipeline = (
         f"v4l2src device=/dev/video0 ! "
         f"video/x-raw,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
-        f"videoconvert ! video/x-raw,format=BGR ! appsink"
+        f"videoconvert ! video/x-raw,format=BGR ! appsink sync=false"
     )
 
     logger.info(f"Using GStreamer pipeline: {gst_pipeline}")
     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
     if not cap.isOpened():
-        logger.error("Failed to open GStreamer pipeline for the camera.")
-        yield b""
+        logger.error("Failed to open GStreamer pipeline for the camera. Check the pipeline and permissions.")
+        yield b""  # Return an empty response
         return
 
     try:
         while True:
             ret, frame = cap.read()
+
             if not ret:
-                logger.warning("Failed to grab frame from camera. Retrying...")
-                time.sleep(1)
+                logger.warning("Failed to grab frame from the camera. Retrying in 1 second...")
+                time.sleep(1)  # Wait and retry if the camera fails to capture a frame
                 continue
 
+            # Check if the frame is valid
+            if frame is None or frame.size == 0:
+                logger.error("Received an invalid frame. Skipping...")
+                continue
+
+            # Encode the frame as JPEG
             success, buffer_encoded = cv2.imencode(".jpg", frame)
             if not success:
-                logger.error("JPEG encoding failed.")
+                logger.error("JPEG encoding failed. Skipping this frame...")
                 continue
 
             frame_bytes = buffer_encoded.tobytes()
             logger.debug("Frame encoded successfully.")
+
+            # Yield the frame bytes as an MJPEG stream
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
             )
+
     except Exception as e:
         logger.error(f"Error in generate_frames: {e}")
     finally:
+        # Ensure the video capture resource is released
         cap.release()
         logger.info("Camera pipeline closed.")
 

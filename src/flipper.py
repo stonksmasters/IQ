@@ -1,181 +1,155 @@
-from flask import Flask, render_template, request, jsonify, Response, Blueprint
-import threading
-import time
-import cv2
+import serial
+import serial.tools.list_ports
 import logging
-import signal
-import yaml
-from flipper import fetch_flipper_data  # Import Flipper functionality
+import time
+import re
+from utils.triangulation import rssi_to_distance, triangulate
 
-# ------------------------------
-# Configuration Management
-# ------------------------------
-def load_config(config_path='config/config.yaml'):
-    try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        logging.info("Configuration loaded successfully.")
-        return config
-    except FileNotFoundError:
-        logging.warning(f"Configuration file '{config_path}' not found. Using defaults.")
-        return {}
-    except Exception as e:
-        logging.error(f"Error loading configuration: {e}")
-        return {}
-
-config = load_config()
-
-# ------------------------------
-# Logging Configuration
-# ------------------------------
+# Configure logging for Flipper Zero
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s: %(message)s",
+    format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
     handlers=[
-        logging.FileHandler("app.log"),
+        logging.FileHandler("flipper.log"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
-# ------------------------------
-# Flask App Initialization
-# ------------------------------
-app = Flask(__name__)
+# Default VID:PID for Flipper Zero (update this as needed)
+DEFAULT_VID_PID = "0483:5740"  # Flipper Zero's VID:PID
 
-signals_lock = threading.Lock()
-signals_data = {
-    "bluetooth": [],
-    "subghz": [],
-    "nfc": [],
-    "rfid": []
-}
-selected_signal = {"type": None, "name": None, "position": None}
+def get_flipper_port():
+    """
+    Identify the serial port of the Flipper Zero by matching VID and PID.
 
-# ------------------------------
-# Video Feed Generation (MJPEG)
-# ------------------------------
-def generate_frames():
-    cam_width = config.get('camera', {}).get('width', 640)
-    cam_height = config.get('camera', {}).get('height', 480)
-    cam_framerate = config.get('camera', {}).get('framerate', 24)
+    Returns:
+        str or None: Serial port path if found, else None.
+    """
+    try:
+        ports = serial.tools.list_ports.comports()
+        for port in ports:
+            if DEFAULT_VID_PID in port.hwid:
+                logger.info(f"Flipper Zero found on port: {port.device}")
+                return port.device
+        logger.warning("No Flipper Zero device found.")
+    except Exception as e:
+        logger.error(f"Error finding Flipper port: {e}")
+    return None
 
-    gst_pipeline = (
-        f"libcamerasrc ! queue ! "
-        f"videoconvert ! queue ! "
-        f"video/x-raw,format=BGR,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
-        f"appsink"
-    )
 
-    logger.info(f"Using GStreamer pipeline: {gst_pipeline}")
-    cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+def is_flipper_connected():
+    """
+    Check if Flipper Zero is connected via USB.
 
-    if not cap.isOpened():
-        logger.error("Failed to open GStreamer pipeline. Check the camera connection and pipeline configuration.")
-        yield b""  # Return empty bytes if camera initialization fails
-        return
+    Returns:
+        bool: True if connected, False otherwise.
+    """
+    port = get_flipper_port()
+    if port:
+        logger.info("Flipper Zero is connected.")
+        return True
+    else:
+        logger.info("Flipper Zero is not connected.")
+        return False
+
+
+def flipper_ble_scan(known_positions):
+    """
+    Trigger a BLE scan using the Flipper Zero via USB and parse results.
+
+    Args:
+        known_positions (dict): Mapping of device addresses to known (x, y) positions.
+
+    Returns:
+        list: List of BLE devices with calculated distances and triangulated positions.
+    """
+    port = get_flipper_port()
+    if not port:
+        logger.error("Flipper Zero port not found.")
+        return []
 
     try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                logger.warning("Failed to grab frame from camera. Retrying...")
-                time.sleep(0.5)
-                continue
+        with serial.Serial(port, 9600, timeout=5) as ser:
+            ser.reset_input_buffer()
+            ser.write(b"ble scan\r\n")  # Command to start BLE scan
+            logger.info("Initiating BLE scan on Flipper Zero...")
+            time.sleep(7)  # Adjust time based on your environment
+            response = ser.read_all().decode(errors='ignore')
+            logger.debug(f"Raw BLE scan response: {response}")
+            devices = parse_flipper_output(response, known_positions)
 
-            success, buffer = cv2.imencode(".jpg", frame)
-            if not success:
-                logger.error("JPEG encoding failed.")
-                continue
+            # Perform triangulation for each detected device
+            triangulated_devices = []
+            for device in devices:
+                if device.get("positions") and device.get("distances"):
+                    try:
+                        device["position"] = triangulate(
+                            positions=device["positions"],
+                            distances=device["distances"]
+                        )
+                        logger.info(f"Triangulated position for {device['name']}: {device['position']}")
+                        triangulated_devices.append(device)
+                    except Exception as e:
+                        logger.error(f"Error triangulating device {device['name']}: {e}")
 
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
-            )
+            logger.info(f"BLE devices found: {triangulated_devices}")
+            return triangulated_devices
+    except serial.SerialException as e:
+        logger.error(f"Serial communication error with Flipper Zero: {e}")
     except Exception as e:
-        logger.error(f"Error in generate_frames: {e}")
-    finally:
-        cap.release()
-        logger.info("Camera pipeline closed.")
+        logger.error(f"Unexpected error during BLE scan: {e}")
+    return []
 
-# ------------------------------
-# Flask Routes
-# ------------------------------
-main_bp = Blueprint('main', __name__)
 
-@main_bp.route("/")
-def index():
-    return render_template("index.html")
+def parse_flipper_output(output, known_positions):
+    """
+    Parse the Flipper Zero BLE scan response into a structured format.
 
-@main_bp.route("/video_feed")
-def video_feed():
-    return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    Args:
+        output (str): Raw output string from the Flipper Zero BLE scan.
+        known_positions (dict): Mapping of device addresses to known (x, y) positions.
 
-@main_bp.route("/flipper_bluetooth", methods=["GET"])
-def flipper_bluetooth():
-    known_positions = config.get("known_positions", {})
-    bluetooth_data = fetch_flipper_data(known_positions)  # BLE data
-    with signals_lock:
-        signals_data["bluetooth"] = bluetooth_data
-    
-    logger.info(f"Flipper Bluetooth signals: {bluetooth_data}")
-    return jsonify({"bluetooth_signals": bluetooth_data})
+    Returns:
+        list: List of BLE devices with calculated distances and positions for triangulation.
+    """
+    devices = []
+    for line in output.splitlines():
+        try:
+            if "Device" in line:
+                match = re.match(r"Device\s+([0-9A-Fa-f:]+)\s+RSSI\s+(-?\d+)\s+dBm", line)
+                if match:
+                    device_address = match.group(1).strip()
+                    rssi = int(match.group(2))
+                    distance = rssi_to_distance(rssi)
 
-@main_bp.route("/flipper_subghz", methods=["GET"])
-def flipper_subghz():
-    # Placeholder: Fetch SubGHz data from Flipper
-    subghz_data = []  # Replace with actual implementation
-    with signals_lock:
-        signals_data["subghz"] = subghz_data
+                    device = {
+                        "name": device_address,
+                        "rssi": rssi,
+                        "distance": distance,
+                        "positions": [],
+                        "distances": [],
+                    }
 
-    logger.info(f"Flipper SubGHz signals: {subghz_data}")
-    return jsonify({"subghz_signals": subghz_data})
+                    # Add known positions for triangulation if available
+                    if device_address in known_positions:
+                        device["positions"].append(known_positions[device_address])
+                        device["distances"].append(distance)
 
-@main_bp.route("/flipper_nfc", methods=["GET"])
-def flipper_nfc():
-    # Placeholder: Fetch NFC data from Flipper
-    nfc_data = []  # Replace with actual implementation
-    with signals_lock:
-        signals_data["nfc"] = nfc_data
+                    devices.append(device)
+        except Exception as e:
+            logger.warning(f"Error parsing line: '{line}' | Exception: {e}")
+    return devices
 
-    logger.info(f"Flipper NFC signals: {nfc_data}")
-    return jsonify({"nfc_signals": nfc_data})
 
-@main_bp.route("/flipper_rfid", methods=["GET"])
-def flipper_rfid():
-    # Placeholder: Fetch RFID data from Flipper
-    rfid_data = []  # Replace with actual implementation
-    with signals_lock:
-        signals_data["rfid"] = rfid_data
+def fetch_flipper_data(known_positions={}):
+    """
+    Fetch data from Flipper Zero via BLE scan.
 
-    logger.info(f"Flipper RFID signals: {rfid_data}")
-    return jsonify({"rfid_signals": rfid_data})
+    Args:
+        known_positions (dict): Mapping of known device addresses to positions.
 
-@main_bp.route("/signals", methods=["GET"])
-def get_signals():
-    with signals_lock:
-        all_signals = []
-        for key, data in signals_data.items():
-            for item in data:
-                all_signals.append({**item, "type": key})
-
-    logger.info(f"Signals returned: {all_signals}")
-    return jsonify({"signals": all_signals})
-
-# ------------------------------
-# Graceful Shutdown
-# ------------------------------
-def handle_exit(signum, frame):
-    logger.info("Shutting down server...")
-    exit(0)
-
-signal.signal(signal.SIGINT, handle_exit)
-signal.signal(signal.SIGTERM, handle_exit)
-
-app.register_blueprint(main_bp)
-
-# ------------------------------
-# Main
-# ------------------------------
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=config.get('debug', False))
+    Returns:
+        list: List of scanned devices with calculated distances and positions.
+    """
+    return flipper_ble_scan(known_positions)
