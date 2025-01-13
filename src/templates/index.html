@@ -35,7 +35,7 @@
       <h2 class="video-title">Live Video Feed</h2>
       <div class="video-container">
         <!-- Updated to match /video_feed Flask endpoint -->
-        <img src="/video_feed" alt="Live Camera Feed" width="100%" height="100%">
+        <img src="{{ url_for('video_feed') }}" alt="Live Camera Feed" width="100%" height="100%">
       </div>
     </div>
   </div>
@@ -46,10 +46,6 @@
 
     socket.on('connect', () => {
       console.log('Connected to WebSocket server.');
-    });
-
-    socket.on('connection_response', (data) => {
-      console.log(data.message);
     });
 
     socket.on('update_signals', (data) => {
@@ -114,10 +110,6 @@
         console.error("Error clearing signal:", error);
       }
     }
-
-    window.onload = () => {
-      // Initial fetch is handled by WebSocket; no need for polling
-    };
   </script>
 </body>
 </html>
