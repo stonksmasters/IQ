@@ -11,17 +11,17 @@ import signal
 import os
 import threading
 
-# Ensure fetch_flipper_data exists in flipper.py or remove the import if unused
-from flipper import fetch_flipper_data  
-from shared import signals_data, signals_lock, selected_signal
-from config import config
+# Placeholder imports; ensure these modules exist or remove if not used
+# from flipper import fetch_flipper_data
+# from shared import signals_data, signals_lock, selected_signal
+# from config import config
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG for detailed logs
+    level=logging.DEBUG,  # Set to DEBUG for maximum verbosity
     format='%(asctime)s %(levelname)s:%(message)s',
     handlers=[
         logging.FileHandler("app.log"),
@@ -35,6 +35,11 @@ named_pipe_path = 'named_pipes/video_pipe'
 # Global frame buffer and lock
 latest_frame = None
 frame_lock = threading.Lock()
+
+# Global signal data structures
+signals_data = {}
+signals_lock = threading.Lock()
+selected_signal = None  # Define if used
 
 def create_named_pipe(pipe_path):
     """Create a named pipe if it doesn't exist."""
@@ -58,48 +63,52 @@ def frame_reader():
     try:
         with open(named_pipe_path, 'rb') as pipe:
             logging.info("Named pipe opened successfully for reading.")
+            buffer = b''
 
             while True:
-                # Read boundary line
-                boundary_line = pipe.readline()
-                if not boundary_line:
-                    logging.warning("No data from named pipe. Waiting...")
+                chunk = pipe.read(4096)
+                if not chunk:
+                    logging.warning("No data read from pipe. Waiting for data...")
                     time.sleep(1)
                     continue
 
-                boundary = b'--frame\r\n'
-                if boundary_line.startswith(boundary):
-                    logging.debug("Boundary line detected. Reading headers.")
+                buffer += chunk
+                logging.debug(f"Read {len(chunk)} bytes from pipe. Buffer size: {len(buffer)} bytes.")
 
-                    # Read headers until an empty line
-                    while True:
-                        header_line = pipe.readline()
-                        if not header_line:
-                            logging.warning("EOF or no more data in pipe while reading headers.")
-                            break
-                        if header_line == b'\r\n':
-                            break
-                        logging.debug(f"Skipping header: {header_line.strip()}")
+                while True:
+                    boundary = b'--frame\r\n'
+                    start = buffer.find(boundary)
+                    if start == -1:
+                        # Boundary not found, keep buffer as is
+                        break
 
-                    # Read JPEG frame data until the next boundary
-                    frame = bytearray()
-                    while True:
-                        byte = pipe.read(1)
-                        if not byte:
-                            logging.warning("EOF encountered while reading frame data.")
-                            break
-                        frame += byte
-                        if frame.endswith(b'\r\n--frame\r\n'):
-                            # Remove the boundary from the end of the frame
-                            frame = frame[:-len(b'\r\n--frame\r\n')]
-                            break
+                    end = buffer.find(boundary, start + len(boundary))
+                    if end == -1:
+                        # Complete frame not yet received
+                        break
 
-                    if frame:
+                    # Extract frame data between boundaries
+                    frame_data = buffer[start + len(boundary):end]
+                    buffer = buffer[end:]  # Remove processed frame from buffer
+
+                    # Parse headers
+                    headers_end = frame_data.find(b'\r\n\r\n')
+                    if headers_end == -1:
+                        logging.warning("No end of headers found. Skipping frame.")
+                        continue
+
+                    headers = frame_data[:headers_end]
+                    jpeg_data = frame_data[headers_end + 4:]
+
+                    # Optionally, parse headers if needed
+                    # For now, assume jpeg_data is the image
+
+                    if jpeg_data:
                         with frame_lock:
-                            latest_frame = bytes(frame)
+                            latest_frame = jpeg_data
                             logging.debug(f"Updated latest_frame with size {len(latest_frame)} bytes.")
-                else:
-                    logging.warning(f"Unexpected data in named pipe: {boundary_line.strip()}")
+                    else:
+                        logging.warning("Empty frame data received.")
 
     except FileNotFoundError as e:
         logging.error(f"Named pipe not found: {e}")
@@ -107,6 +116,7 @@ def frame_reader():
         logging.error(f"Error in frame_reader: {e}")
     finally:
         logging.info("Frame reader thread terminated.")
+
 def generate_frames():
     """
     Generator function to yield the latest frame to the client.
@@ -116,10 +126,7 @@ def generate_frames():
 
     while True:
         with frame_lock:
-            if latest_frame:
-                frame = latest_frame
-            else:
-                frame = None
+            frame = latest_frame
 
         if frame:
             try:
@@ -138,6 +145,7 @@ def generate_frames():
         else:
             logging.debug("No frame available to yield. Sleeping for 0.1 seconds.")
             time.sleep(0.1)
+
 @app.route('/')
 def index():
     """Main page with HTML/JS to display the video stream and signals."""
@@ -149,6 +157,7 @@ def video_feed():
     Route to provide MJPEG video feed.
     Each client gets the latest frames without interfering with each other.
     """
+    logging.info("Client connected to /video_feed. Starting frame generator.")
     return Response(
         generate_frames(),
         mimetype='multipart/x-mixed-replace; boundary=frame'
@@ -195,7 +204,15 @@ def emit_signals():
         # Emit to all connected clients
         socketio.emit('update_signals', {'signals': all_signals})
         logging.debug(f"Emitted signals: {all_signals}")
-        socketio.sleep(config.get('signal_update_interval', 5))
+        socketio.sleep(5)  # Replace with config.get('signal_update_interval', 5) if config is defined
+
+@socketio.on('connect')
+def handle_connect():
+    logging.info(f"SocketIO client connected: {request.sid}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    logging.info(f"SocketIO client disconnected: {request.sid}")
 
 def handle_shutdown(sig, frame):
     """Gracefully shut down SocketIO on SIGINT/SIGTERM."""
@@ -220,11 +237,3 @@ if __name__ == '__main__':
 
     logging.info("Starting SocketIO server on 0.0.0.0:5000")
     socketio.run(app, host='0.0.0.0', port=5000)
-
-@socketio.on('connect')
-def handle_connect():
-    logging.info(f"SocketIO client connected: {request.sid}")
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    logging.info(f"SocketIO client disconnected: {request.sid}")

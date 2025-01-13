@@ -10,6 +10,7 @@ def main():
     try:
         # Function to launch Chromium in kiosk mode after a short delay
         def launch_kiosk():
+            logging.info("Kiosk launcher thread started. Waiting for server to initialize...")
             time.sleep(5)  # Wait longer to ensure the server is up
             logging.info("Launching Chromium in kiosk mode...")
             try:
