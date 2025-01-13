@@ -1,47 +1,36 @@
+# src/opencv_test.py
+
 import cv2
-import os
+import logging
 
-def main():
-    # Define GStreamer pipeline matching the working command
-    gst_pipeline = (
-        "libcamerasrc ! "
-        "queue ! "
-        "videoconvert ! "
-        "video/x-raw,format=BGR,width=640,height=480,framerate=15/1 ! "
-        "appsink sync=false"
+def test_camera(device_index=1):
+    """
+    Test camera access by capturing a single frame.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s:%(message)s',
+        handlers=[
+            logging.StreamHandler()
+        ]
     )
-
-    # Initialize VideoCapture with the GStreamer pipeline
-    cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+    
+    cap = cv2.VideoCapture(device_index, cv2.CAP_V4L2)
 
     if not cap.isOpened():
-        print("Error: Unable to open the camera.")
+        logging.error(f"Error: Unable to open the camera at /dev/video{device_index}.")
         return
 
-    print("Camera is streaming. Capturing 5 frames...")
-
-    # Directory to save captured frames
-    save_dir = "captured_frames"
-    os.makedirs(save_dir, exist_ok=True)
-
-    for i in range(1, 6):
-        ret, frame = cap.read()
-        if not ret:
-            print(f"Error: Unable to read frame {i}.")
-            continue
-
-        # Define filename for the captured frame
-        frame_filename = os.path.join(save_dir, f"frame_{i}.jpg")
-
-        # Save the captured frame as a JPEG file
-        success = cv2.imwrite(frame_filename, frame)
-        if success:
-            print(f"Captured and saved {frame_filename}")
-        else:
-            print(f"Failed to save {frame_filename}")
+    ret, frame = cap.read()
+    if not ret:
+        logging.error(f"Error: Can't receive frame from /dev/video{device_index} (stream end?). Exiting ...")
+    else:
+        # Save the captured frame as an image file
+        cv2.imwrite(f"test_frame_video{device_index}.jpg", frame)
+        logging.info(f"Frame captured from /dev/video{device_index} and saved as test_frame_video{device_index}.jpg")
 
     cap.release()
-    print("Camera pipeline closed.")
 
 if __name__ == "__main__":
-    main()
+    # Attempt to open /dev/video1
+    test_camera(device_index=1)
