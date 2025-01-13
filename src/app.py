@@ -62,14 +62,17 @@ def frame_reader():
     Background thread function to read frames from the named pipe
     and update the global latest_frame variable.
     """
-    global latest_frame, frames_read
+    global latest_frame
     logging.info(f"Starting frame reader thread. Opening named pipe {named_pipe_path} for reading.")
+
     try:
         with open(named_pipe_path, 'rb') as pipe:
             logging.info("Named pipe opened successfully for reading.")
             while True:
                 # Read boundary line
                 boundary_line = pipe.readline()
+                logging.debug(f"Read boundary line: {boundary_line.strip()}")
+
                 if not boundary_line:
                     logging.warning("No data read from pipe. Waiting for data...")
                     time.sleep(1)
@@ -77,9 +80,9 @@ def frame_reader():
 
                 boundary = b'--frame\r\n'
                 if boundary_line.strip() == boundary.strip():
-                    logging.debug("Boundary line detected. Reading headers.")
+                    logging.debug("Boundary detected. Reading headers.")
 
-                    # Read headers until an empty line
+                    # Read headers
                     headers = {}
                     while True:
                         header_line = pipe.readline()
@@ -93,11 +96,11 @@ def frame_reader():
                         if len(header_parts) == 2:
                             key, value = header_parts
                             headers[key.strip().lower()] = value.strip()
-                            logging.debug(f"Header parsed: {key.strip().lower()} = {value.strip()}")
+                            logging.debug(f"Header: {key.strip().lower()} = {value.strip()}")
                         else:
                             logging.warning(f"Malformed header line: {header_line.strip()}")
 
-                    # Ensure Content-Length is present
+                    # Validate Content-Length
                     content_length = headers.get('content-length')
                     if not content_length:
                         logging.warning("Content-Length header missing. Skipping frame.")
@@ -105,24 +108,27 @@ def frame_reader():
 
                     try:
                         content_length = int(content_length)
-                        logging.debug(f"Content-Length: {content_length} bytes")
+                        logging.debug(f"Content-Length: {content_length}")
                     except ValueError:
-                        logging.error(f"Invalid Content-Length value: {headers.get('content-length')}. Skipping frame.")
+                        logging.error(f"Invalid Content-Length: {headers.get('content-length')}. Skipping frame.")
                         continue
 
-                    # Read the JPEG frame data based on Content-Length
+                    # Read the frame data
                     frame_data = pipe.read(content_length)
+                    logging.debug(f"Read {len(frame_data)} bytes for frame data.")
+
                     if len(frame_data) != content_length:
-                        logging.warning(f"Expected {content_length} bytes, but received {len(frame_data)} bytes.")
+                        logging.warning(f"Expected {content_length} bytes, got {len(frame_data)} bytes. Skipping frame.")
                         continue
 
+                    # Update the latest frame
                     with frame_lock:
                         latest_frame = frame_data
-                        frames_read += 1
-                        logging.debug(f"Updated latest_frame with size {len(latest_frame)} bytes. Total frames read: {frames_read}")
+                        logging.debug(f"Updated latest_frame with size {len(latest_frame)} bytes.")
 
                 else:
                     logging.warning(f"Unexpected boundary line: {boundary_line.strip()}. Skipping.")
+
     except FileNotFoundError as e:
         logging.error(f"Named pipe not found: {e}")
     except Exception as e:
