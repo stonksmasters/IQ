@@ -140,12 +140,11 @@ cam_framerate = config.get('camera', {}).get('framerate', 15)
 
 gst_pipeline = (
     "v4l2src device=/dev/video1 ! "
-    "queue ! "
     "videoconvert ! "
-    "queue ! "
-    f"video/x-raw,format=BGR,width={cam_width},height={cam_height},framerate={cam_framerate}/1 ! "
+    "video/x-raw,format=YUY2,width=640,height=480,framerate=30/1 ! "
     "appsink sync=false"
 )
+
 
 
 camera_stream = CameraStream(gst_pipeline)
