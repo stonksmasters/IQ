@@ -44,60 +44,53 @@ def create_named_pipe(pipe_path):
 def generate_frames():
     """
     Generator function to read MJPEG frames from the named pipe.
-    Each frame in the pipe is separated by '--frame\\r\\n', followed by HTTP-like headers,
-    and ends with an empty line. The actual JPEG data continues until the next boundary.
+    Handles unexpected data and skips to the next valid frame boundary.
     """
     logging.info(f"Opening named pipe {named_pipe_path} for reading.")
+    boundary = b'--frame\r\n'
     try:
         with open(named_pipe_path, 'rb') as pipe:
             logging.info("Named pipe opened successfully for reading.")
+            buffer = b''
 
             while True:
-                boundary_line = pipe.readline()
-                if not boundary_line:
+                chunk = pipe.read(4096)  # Read data in chunks
+                if not chunk:
                     logging.warning("No data from named pipe. Waiting...")
                     time.sleep(1)
                     continue
 
-                boundary = b'--frame\r\n'
-                if boundary_line.startswith(boundary):
-                    # Read headers
-                    headers = []
-                    while True:
-                        header_line = pipe.readline()
-                        if not header_line:
-                            logging.warning("EOF or no more data in pipe while reading headers.")
-                            break
-                        if header_line == b'\r\n':
-                            break
-                        headers.append(header_line.strip())
-                        logging.debug(f"Header: {header_line.strip()}")
+                buffer += chunk
+                while True:
+                    # Look for the start of a frame boundary
+                    start_index = buffer.find(boundary)
+                    if start_index == -1:
+                        # No boundary found; keep reading
+                        break
 
-                    # Read JPEG frame data
-                    frame = bytearray()
-                    while True:
-                        byte = pipe.read(1)
-                        if not byte:
-                            logging.warning("EOF encountered while reading frame data.")
-                            break
-                        frame += byte
-                        if frame.endswith(b'\r\n--frame\r\n'):
-                            frame = frame[:-len(b'\r\n--frame\r\n')]
-                            break
+                    # Look for the next boundary to extract the frame
+                    end_index = buffer.find(boundary, start_index + len(boundary))
+                    if end_index == -1:
+                        # Incomplete frame; wait for more data
+                        break
 
-                    if frame:
+                    # Extract the frame data
+                    frame_data = buffer[start_index + len(boundary):end_index]
+                    buffer = buffer[end_index:]  # Remove processed data from buffer
+
+                    # Ensure the frame data is valid
+                    if frame_data.strip():
                         try:
-                            logging.debug(f"Yielding frame of size {len(frame)} bytes to client.")
+                            logging.debug(f"Yielding frame of size {len(frame_data)} bytes.")
                             yield (
                                 b'--frame\r\n'
                                 b'Content-Type: image/jpeg\r\n\r\n'
-                                + frame +
+                                + frame_data +
                                 b'\r\n'
                             )
                         except Exception as e:
-                            logging.error(f"Error while yielding frame to client: {e}")
-                else:
-                    logging.warning(f"Unexpected data in named pipe: {boundary_line.strip()}")
+                            logging.error(f"Error while yielding frame: {e}")
+                            continue
     except FileNotFoundError as e:
         logging.error(f"Named pipe not found: {e}")
     except Exception as e:
