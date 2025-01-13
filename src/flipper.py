@@ -1,5 +1,5 @@
 #/src/flipper.py
-
+import threading
 import serial
 import serial.tools.list_ports
 import logging
