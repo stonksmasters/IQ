@@ -7,16 +7,22 @@
   <title>Signal Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/styles.css">
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" integrity="sha384-puKb8ufC6a6m0O/xQ4NnKDRK1sxxk6+uqg0ZDHpO3eYIpU4YnE8tOq3Y4IqKZLbz" crossorigin="anonymous"></script>
   <style>
     body, html {
-      margin: 0; padding: 0; overflow: hidden;
-      width: 100%; height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      font-family: Arial, sans-serif;
     }
     #videoStream {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       object-fit: cover;
       z-index: 1;
     }
@@ -24,31 +30,59 @@
       position: absolute;
       top: 10px;
       left: 10px;
-      background: rgba(0,0,0,0.5);
-      color: #fff;
-      padding: 10px;
-      border-radius: 5px;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 15px;
+      border-radius: 10px;
       z-index: 2;
+      max-width: 300px;
+    }
+    #hud h2 {
+      margin: 5px 0;
+      font-size: 18px;
     }
     .signal-lists ul {
-      list-style-type: none;
+      list-style: none;
       padding: 0;
-      margin: 0;
+      margin: 5px 0 10px 0;
+    }
+    .signal-lists li {
+      margin: 5px 0;
+      font-size: 14px;
+    }
+    .clear-button {
+      display: block;
+      margin-top: 10px;
+      padding: 10px 15px;
+      background-color: #ff5555;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .clear-button:hover {
+      background-color: #ff4444;
     }
   </style>
 </head>
 <body>
-  <img id="videoStream" src="/video_feed" alt="Live Feed">
+  <!-- Fullscreen Live Video Stream -->
+  <img id="videoStream" src="/video_feed" alt="Live Video Stream">
+
+  <!-- HUD for signals -->
   <div id="hud">
     <h2>Wi-Fi Signals</h2>
     <ul id="wifi-list"></ul>
     <h2>Bluetooth Signals</h2>
     <ul id="bluetooth-list"></ul>
-    <button onclick="clearSignal()">Clear Tracking</button>
+    <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
   </div>
 
   <script>
-    const socket = io();
+    const socket = io({
+      transports: ['websocket'], // Force WebSocket for better performance
+    });
 
     socket.on('connect', () => {
       console.log('Connected to server');
@@ -65,13 +99,14 @@
       wifiList.innerHTML = '';
       bluetoothList.innerHTML = '';
 
-      signals.forEach(sig => {
-        const li = document.createElement('li');
-        li.textContent = `${sig.name} (RSSI: ${sig.rssi})`;
-        if (sig.type.toLowerCase() === 'wifi') {
-          wifiList.appendChild(li);
-        } else if (sig.type.toLowerCase() === 'bluetooth') {
-          bluetoothList.appendChild(li);
+      signals.forEach((signal) => {
+        const listItem = document.createElement('li');
+        listItem.textContent = `${signal.name} (RSSI: ${signal.rssi})`;
+
+        if (signal.type.toLowerCase() === 'wifi') {
+          wifiList.appendChild(listItem);
+        } else if (signal.type.toLowerCase() === 'bluetooth') {
+          bluetoothList.appendChild(listItem);
         }
       });
     }
@@ -80,10 +115,14 @@
       try {
         await fetch('/clear_signal', { method: 'POST' });
         alert('Tracking cleared.');
-      } catch (err) {
-        console.error(err);
+      } catch (error) {
+        console.error('Error clearing signals:', error);
       }
     }
+
+    socket.on('disconnect', () => {
+      console.warn('Disconnected from server');
+    });
   </script>
 </body>
 </html>

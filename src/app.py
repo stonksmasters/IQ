@@ -16,7 +16,7 @@ from shared import signals_data, signals_lock, selected_signal
 from config import config
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet')
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,10 +49,12 @@ def generate_frames():
     and ends with an empty line. The actual JPEG data continues until the next boundary.
     """
     logging.info(f"Opening named pipe {named_pipe_path} for reading.")
+    client_count = 0  # Track number of connected clients
     try:
         with open(named_pipe_path, 'rb') as pipe:
+            logging.info("Named pipe opened successfully for reading.")
+
             while True:
-                # The GStreamer pipeline writes boundaries as:  --frame\r\n
                 boundary_line = pipe.readline()
                 if not boundary_line:
                     logging.warning("No data from named pipe. Waiting...")
@@ -60,62 +62,80 @@ def generate_frames():
                     continue
 
                 boundary = b'--frame\r\n'
-                # Check if we found the boundary line
                 if boundary_line.startswith(boundary):
-                    # Read headers until an empty line
+                    logging.debug("Boundary line detected. Reading headers.")
+
+                    # Read headers
+                    headers = []
                     while True:
                         header_line = pipe.readline()
                         if not header_line:
                             logging.warning("EOF or no more data in pipe while reading headers.")
                             break
                         if header_line == b'\r\n':
-                            # Empty line => end of headers
                             break
-                        # Skip / log any other header lines (Content-Length, Content-Type, etc.)
-                        logging.debug(f"Skipping header: {header_line.strip()}")
+                        headers.append(header_line.strip())
+                        logging.debug(f"Header: {header_line.strip()}")
 
-                    # Now read the JPEG frame data until the next boundary
-                    # We look for \r\n--frame\r\n as the next boundary indicator
+                    # Read JPEG frame data
+                    logging.debug("Reading frame data from named pipe.")
                     frame = bytearray()
                     while True:
                         byte = pipe.read(1)
                         if not byte:
-                            # EOF or no data
+                            logging.warning("EOF encountered while reading frame data.")
                             break
                         frame += byte
                         if frame.endswith(b'\r\n--frame\r\n'):
-                            # Remove the boundary from the end of the frame
                             frame = frame[:-len(b'\r\n--frame\r\n')]
                             break
 
                     if frame:
-                        yield (
-                            b'--frame\r\n'
-                            b'Content-Type: image/jpeg\r\n\r\n'
-                            + frame +
-                            b'\r\n'
-                        )
-
+                        try:
+                            logging.debug(f"Yielding frame of size {len(frame)} bytes to client.")
+                            yield (
+                                b'--frame\r\n'
+                                b'Content-Type: image/jpeg\r\n\r\n'
+                                + frame +
+                                b'\r\n'
+                            )
+                        except GeneratorExit:
+                            client_count -= 1
+                            logging.info(f"Client disconnected. Active clients: {client_count}")
+                            break
+                        except Exception as e:
+                            logging.error(f"Error while yielding frame to client: {e}")
+                else:
+                    logging.warning(f"Unexpected data in named pipe: {boundary_line.strip()}")
+    except FileNotFoundError as e:
+        logging.error(f"Named pipe not found: {e}")
     except Exception as e:
         logging.error(f"Error reading from named pipe: {e}")
     finally:
-        logging.info("Named pipe closed.")
+        logging.info("Named pipe generator closed.")
+
+@app.route('/video_feed')
+def video_feed():
+    """
+    Route to provide MJPEG video feed.
+    Logs every client connection and disconnection.
+    """
+    global client_count
+    client_count += 1
+    logging.info(f"New client connected. Active clients: {client_count}")
+
+    try:
+        return Response(generate_frames(),
+                        mimetype='multipart/x-mixed-replace; boundary=frame')
+    finally:
+        client_count -= 1
+        logging.info(f"Client disconnected. Active clients: {client_count}")
 
 @app.route('/')
 def index():
     """Main page with HTML/JS to display the video stream and signals."""
     return render_template('index.html')
 
-@app.route('/video_feed')
-def video_feed():
-    """
-    MJPEG stream route. The <img> tag in the frontend points here,
-    so multiple clients (local kiosk, remote browsers) can see the same feed.
-    """
-    return Response(
-        generate_frames(),
-        mimetype='multipart/x-mixed-replace; boundary=frame'
-    )
 
 @app.route('/add_signal', methods=['POST'])
 def add_signal():
