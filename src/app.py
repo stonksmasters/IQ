@@ -36,6 +36,10 @@ named_pipe_path = 'named_pipes/video_pipe'
 latest_frame = None
 frame_lock = threading.Lock()
 
+# Frame counters
+frames_read = 0
+frames_yielded = 0
+
 # Global signal data structures
 signals_data = {}
 signals_lock = threading.Lock()
@@ -58,58 +62,67 @@ def frame_reader():
     Background thread function to read frames from the named pipe
     and update the global latest_frame variable.
     """
-    global latest_frame
+    global latest_frame, frames_read
     logging.info(f"Starting frame reader thread. Opening named pipe {named_pipe_path} for reading.")
     try:
         with open(named_pipe_path, 'rb') as pipe:
             logging.info("Named pipe opened successfully for reading.")
-            buffer = b''
-
             while True:
-                chunk = pipe.read(4096)
-                if not chunk:
+                # Read boundary line
+                boundary_line = pipe.readline()
+                if not boundary_line:
                     logging.warning("No data read from pipe. Waiting for data...")
                     time.sleep(1)
                     continue
 
-                buffer += chunk
-                logging.debug(f"Read {len(chunk)} bytes from pipe. Buffer size: {len(buffer)} bytes.")
+                boundary = b'--frame\r\n'
+                if boundary_line.strip() == boundary.strip():
+                    logging.debug("Boundary line detected. Reading headers.")
 
-                while True:
-                    boundary = b'--frame\r\n'
-                    start = buffer.find(boundary)
-                    if start == -1:
-                        # Boundary not found, keep buffer as is
-                        break
+                    # Read headers until an empty line
+                    headers = {}
+                    while True:
+                        header_line = pipe.readline()
+                        if not header_line:
+                            logging.warning("EOF or no more data in pipe while reading headers.")
+                            break
+                        if header_line == b'\r\n':
+                            # End of headers
+                            break
+                        header_parts = header_line.decode('utf-8', errors='replace').strip().split(':', 1)
+                        if len(header_parts) == 2:
+                            key, value = header_parts
+                            headers[key.strip().lower()] = value.strip()
+                            logging.debug(f"Header parsed: {key.strip().lower()} = {value.strip()}")
+                        else:
+                            logging.warning(f"Malformed header line: {header_line.strip()}")
 
-                    end = buffer.find(boundary, start + len(boundary))
-                    if end == -1:
-                        # Complete frame not yet received
-                        break
-
-                    # Extract frame data between boundaries
-                    frame_data = buffer[start + len(boundary):end]
-                    buffer = buffer[end:]  # Remove processed frame from buffer
-
-                    # Parse headers
-                    headers_end = frame_data.find(b'\r\n\r\n')
-                    if headers_end == -1:
-                        logging.warning("No end of headers found. Skipping frame.")
+                    # Ensure Content-Length is present
+                    content_length = headers.get('content-length')
+                    if not content_length:
+                        logging.warning("Content-Length header missing. Skipping frame.")
                         continue
 
-                    headers = frame_data[:headers_end]
-                    jpeg_data = frame_data[headers_end + 4:]
+                    try:
+                        content_length = int(content_length)
+                        logging.debug(f"Content-Length: {content_length} bytes")
+                    except ValueError:
+                        logging.error(f"Invalid Content-Length value: {headers.get('content-length')}. Skipping frame.")
+                        continue
 
-                    # Optionally, parse headers if needed
-                    # For now, assume jpeg_data is the image
+                    # Read the JPEG frame data based on Content-Length
+                    frame_data = pipe.read(content_length)
+                    if len(frame_data) != content_length:
+                        logging.warning(f"Expected {content_length} bytes, but received {len(frame_data)} bytes.")
+                        continue
 
-                    if jpeg_data:
-                        with frame_lock:
-                            latest_frame = jpeg_data
-                            logging.debug(f"Updated latest_frame with size {len(latest_frame)} bytes.")
-                    else:
-                        logging.warning("Empty frame data received.")
+                    with frame_lock:
+                        latest_frame = frame_data
+                        frames_read += 1
+                        logging.debug(f"Updated latest_frame with size {len(latest_frame)} bytes. Total frames read: {frames_read}")
 
+                else:
+                    logging.warning(f"Unexpected boundary line: {boundary_line.strip()}. Skipping.")
     except FileNotFoundError as e:
         logging.error(f"Named pipe not found: {e}")
     except Exception as e:
@@ -121,16 +134,16 @@ def generate_frames():
     """
     Generator function to yield the latest frame to the client.
     """
-    global latest_frame
+    global latest_frame, frames_yielded
     logging.info("Client started streaming frames.")
-
     while True:
         with frame_lock:
             frame = latest_frame
 
         if frame:
             try:
-                logging.debug(f"Yielding frame of size {len(frame)} bytes to client.")
+                frames_yielded += 1
+                logging.debug(f"Yielding frame of size {len(frame)} bytes to client. Total frames yielded: {frames_yielded}")
                 yield (
                     b'--frame\r\n'
                     b'Content-Type: image/jpeg\r\n\r\n'
@@ -218,6 +231,21 @@ def handle_shutdown(sig, frame):
     """Gracefully shut down SocketIO on SIGINT/SIGTERM."""
     logging.info("Received shutdown signal, stopping SocketIO...")
     socketio.stop()
+
+@app.route('/health')
+def health_check():
+    """
+    Health check endpoint to verify application status and frame counts.
+    """
+    with frame_lock:
+        status = {
+            'status': 'running',
+            'frames_read': frames_read,
+            'frames_yielded': frames_yielded,
+            'latest_frame_size': len(latest_frame) if latest_frame else 0
+        }
+    logging.info("Health check requested.")
+    return jsonify(status), 200
 
 if __name__ == '__main__':
     # Prepare the named pipe before reading

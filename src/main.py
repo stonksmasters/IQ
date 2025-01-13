@@ -6,7 +6,16 @@ import subprocess
 from app import app, socketio
 
 def main():
+    logging.basicConfig(
+        level=logging.DEBUG,  # Set to DEBUG for maximum verbosity
+        format='%(asctime)s %(levelname)s:%(message)s',
+        handlers=[
+            logging.FileHandler("main.log"),
+            logging.StreamHandler()
+        ]
+    )
     logging.info("Starting the application with SocketIO...")
+
     try:
         # Function to launch Chromium in kiosk mode after a short delay
         def launch_kiosk():
