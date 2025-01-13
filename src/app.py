@@ -139,11 +139,13 @@ cam_height = config.get('camera', {}).get('height', 480)
 cam_framerate = config.get('camera', {}).get('framerate', 15)
 
 gst_pipeline = (
-    "v4l2src device=/dev/video1 ! "
+    "libcamerasrc ! "
+    "queue ! "
     "videoconvert ! "
-    "video/x-raw,format=YUY2,width=640,height=480,framerate=30/1 ! "
+    "video/x-raw,format=BGR,width=640,height=480,framerate=15/1 ! "
     "appsink sync=false"
 )
+
 
 
 
