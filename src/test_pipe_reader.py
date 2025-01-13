@@ -1,9 +1,14 @@
+import os
 import cv2
 import numpy as np
 
 named_pipe_path = 'named_pipes/video_pipe'
+output_dir = 'frames'
+
+os.makedirs(output_dir, exist_ok=True)
 
 def read_pipe():
+    frame_count = 0
     with open(named_pipe_path, 'rb') as pipe:
         while True:
             # Read boundary
@@ -27,8 +32,9 @@ def read_pipe():
                     frame_data = pipe.read(content_length)
                     frame = cv2.imdecode(np.frombuffer(frame_data, np.uint8), cv2.IMREAD_COLOR)
                     if frame is not None:
-                        cv2.imshow("Frame", frame)
-                        if cv2.waitKey(1) & 0xFF == ord('q'):
-                            break
+                        frame_file = os.path.join(output_dir, f'frame_{frame_count:04d}.jpg')
+                        cv2.imwrite(frame_file, frame)
+                        print(f"Saved frame to {frame_file}")
+                        frame_count += 1
 
 read_pipe()
