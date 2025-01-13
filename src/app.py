@@ -1,22 +1,18 @@
-# src/app.py
-
 import eventlet
-eventlet.monkey_patch()  # Must be the first import to ensure proper monkey patching
+eventlet.monkey_patch()  # Must be the first import
 
 from flask import Flask, render_template, request, jsonify, Response
 from flask_socketio import SocketIO, emit
 import logging
 import time
-import signal
 import os
 import threading
-
-from flipper import fetch_flipper_data  # Ensures this function exists in flipper.py
+from flipper import fetch_flipper_data
 from shared import signals_data, signals_lock, selected_signal
 from config import config
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
+socketio = SocketIO(app, async_mode='eventlet')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +25,9 @@ logging.basicConfig(
 
 # Named pipe path
 named_pipe_path = 'named_pipes/video_pipe'
+
+# Global variable to track active clients
+client_count = 0
 
 def create_named_pipe(pipe_path):
     """Create a named pipe if it doesn't exist."""
@@ -49,7 +48,6 @@ def generate_frames():
     and ends with an empty line. The actual JPEG data continues until the next boundary.
     """
     logging.info(f"Opening named pipe {named_pipe_path} for reading.")
-    client_count = 0  # Track number of connected clients
     try:
         with open(named_pipe_path, 'rb') as pipe:
             logging.info("Named pipe opened successfully for reading.")
@@ -63,8 +61,6 @@ def generate_frames():
 
                 boundary = b'--frame\r\n'
                 if boundary_line.startswith(boundary):
-                    logging.debug("Boundary line detected. Reading headers.")
-
                     # Read headers
                     headers = []
                     while True:
@@ -78,7 +74,6 @@ def generate_frames():
                         logging.debug(f"Header: {header_line.strip()}")
 
                     # Read JPEG frame data
-                    logging.debug("Reading frame data from named pipe.")
                     frame = bytearray()
                     while True:
                         byte = pipe.read(1)
@@ -99,10 +94,6 @@ def generate_frames():
                                 + frame +
                                 b'\r\n'
                             )
-                        except GeneratorExit:
-                            client_count -= 1
-                            logging.info(f"Client disconnected. Active clients: {client_count}")
-                            break
                         except Exception as e:
                             logging.error(f"Error while yielding frame to client: {e}")
                 else:
@@ -113,6 +104,10 @@ def generate_frames():
         logging.error(f"Error reading from named pipe: {e}")
     finally:
         logging.info("Named pipe generator closed.")
+
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 @app.route('/video_feed')
 def video_feed():
@@ -131,22 +126,11 @@ def video_feed():
         client_count -= 1
         logging.info(f"Client disconnected. Active clients: {client_count}")
 
-@app.route('/')
-def index():
-    """Main page with HTML/JS to display the video stream and signals."""
-    return render_template('index.html')
-
-
 @app.route('/add_signal', methods=['POST'])
 def add_signal():
     """
-    Simple REST endpoint for external devices/computers to post signals
-    that will show up on the Pi's HUD. Example JSON:
-      {
-        "type": "wifi",
-        "name": "OfficeNetwork",
-        "rssi": -50
-      }
+    A simple REST endpoint to allow remote computers
+    to add signals that appear on the Pi's HUD.
     """
     data = request.get_json()
     if not data or 'type' not in data or 'name' not in data:
@@ -154,7 +138,7 @@ def add_signal():
 
     signal_type = data['type'].lower()
     signal_name = data['name']
-    signal_rssi = data.get('rssi', -60)  # default RSSI if not provided
+    signal_rssi = data.get('rssi', -60)  # default RSSI
 
     with signals_lock:
         if signal_type not in signals_data:
@@ -169,8 +153,7 @@ def add_signal():
 
 def emit_signals():
     """
-    Background thread: continuously emits the signals_data to all connected
-    SocketIO clients, so they can update their HUD overlays in real-time.
+    Continuously emit signal data to all connected clients for the HUD.
     """
     while True:
         with signals_lock:
@@ -179,22 +162,16 @@ def emit_signals():
                 for item in data_list:
                     all_signals.append({**item, "type": signal_type})
 
-        # Send to all connected SocketIO clients
         socketio.emit('update_signals', {'signals': all_signals})
         socketio.sleep(config.get('signal_update_interval', 5))
 
-# Prepare the named pipe before reading
+# Prepare the named pipe
 create_named_pipe(named_pipe_path)
 
-# Start the background signals thread
+# Start background thread to emit signals
 signals_thread = threading.Thread(target=emit_signals, daemon=True)
 signals_thread.start()
 
-def handle_shutdown(sig, frame):
-    """Gracefully shut down SocketIO on SIGINT/SIGTERM."""
-    logging.info("Received shutdown signal, stopping SocketIO...")
-    socketio.stop()
-
-# Register signal handlers for clean exit
-signal.signal(signal.SIGINT, handle_shutdown)
-signal.signal(signal.SIGTERM, handle_shutdown)
+if __name__ == '__main__':
+    logging.info("Starting SocketIO server...")
+    socketio.run(app, host='0.0.0.0', port=5000)
