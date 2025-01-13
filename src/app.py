@@ -58,49 +58,32 @@ def create_named_pipe(pipe_path):
         logging.info(f"Named pipe already exists at {pipe_path}")
 
 def frame_reader():
-    """
-    Background thread function to read frames from the named pipe
-    and update the global latest_frame variable.
-    """
     global latest_frame
     logging.info(f"Starting frame reader thread. Opening named pipe {named_pipe_path} for reading.")
-
     try:
         with open(named_pipe_path, 'rb') as pipe:
             logging.info("Named pipe opened successfully for reading.")
             while True:
                 # Read boundary line
                 boundary_line = pipe.readline()
-                logging.debug(f"Read boundary line: {boundary_line.strip()}")
-
+                logging.debug(f"Boundary line read: {boundary_line.strip()}")
                 if not boundary_line:
-                    logging.warning("No data read from pipe. Waiting for data...")
+                    logging.warning("No data from pipe. Retrying...")
                     time.sleep(1)
                     continue
 
                 boundary = b'--frame\r\n'
                 if boundary_line.strip() == boundary.strip():
-                    logging.debug("Boundary detected. Reading headers.")
-
-                    # Read headers
+                    logging.debug("Detected frame boundary. Reading headers.")
                     headers = {}
                     while True:
                         header_line = pipe.readline()
-                        if not header_line:
-                            logging.warning("EOF or no more data in pipe while reading headers.")
+                        if header_line == b'\r\n':  # End of headers
                             break
-                        if header_line == b'\r\n':
-                            # End of headers
-                            break
-                        header_parts = header_line.decode('utf-8', errors='replace').strip().split(':', 1)
+                        header_parts = header_line.decode('utf-8', errors='replace').split(':', 1)
                         if len(header_parts) == 2:
-                            key, value = header_parts
-                            headers[key.strip().lower()] = value.strip()
-                            logging.debug(f"Header: {key.strip().lower()} = {value.strip()}")
-                        else:
-                            logging.warning(f"Malformed header line: {header_line.strip()}")
+                            headers[header_parts[0].strip().lower()] = header_parts[1].strip()
 
-                    # Validate Content-Length
                     content_length = headers.get('content-length')
                     if not content_length:
                         logging.warning("Content-Length header missing. Skipping frame.")
@@ -108,39 +91,27 @@ def frame_reader():
 
                     try:
                         content_length = int(content_length)
-                        logging.debug(f"Content-Length: {content_length}")
                     except ValueError:
-                        logging.error(f"Invalid Content-Length: {headers.get('content-length')}. Skipping frame.")
+                        logging.error(f"Invalid Content-Length: {content_length}. Skipping frame.")
                         continue
 
-                    # Read the frame data
                     frame_data = pipe.read(content_length)
-                    logging.debug(f"Read {len(frame_data)} bytes for frame data.")
-
                     if len(frame_data) != content_length:
-                        logging.warning(f"Expected {content_length} bytes, got {len(frame_data)} bytes. Skipping frame.")
+                        logging.warning(f"Frame size mismatch. Expected {content_length}, got {len(frame_data)}.")
                         continue
 
-                    # Update the latest frame
                     with frame_lock:
                         latest_frame = frame_data
-                        logging.debug(f"Updated latest_frame with size {len(latest_frame)} bytes.")
-
+                        logging.debug(f"Updated latest_frame. Size: {len(latest_frame)} bytes.")
                 else:
-                    logging.warning(f"Unexpected boundary line: {boundary_line.strip()}. Skipping.")
-
-    except FileNotFoundError as e:
-        logging.error(f"Named pipe not found: {e}")
+                    logging.warning(f"Unexpected boundary: {boundary_line.strip()}")
     except Exception as e:
         logging.error(f"Error in frame_reader: {e}")
     finally:
         logging.info("Frame reader thread terminated.")
 
 def generate_frames():
-    """
-    Generator function to yield the latest frame to the client.
-    """
-    global latest_frame, frames_yielded
+    global latest_frame
     logging.info("Client started streaming frames.")
     while True:
         with frame_lock:
@@ -148,21 +119,16 @@ def generate_frames():
 
         if frame:
             try:
-                frames_yielded += 1
-                logging.debug(f"Yielding frame of size {len(frame)} bytes to client. Total frames yielded: {frames_yielded}")
+                logging.debug(f"Yielding frame of size {len(frame)} bytes to client.")
                 yield (
                     b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n'
-                    + frame +
-                    b'\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
                 )
-            except GeneratorExit:
-                logging.info("Client disconnected from video_feed.")
-                break
             except Exception as e:
                 logging.error(f"Error while yielding frame: {e}")
+                break
         else:
-            logging.debug("No frame available to yield. Sleeping for 0.1 seconds.")
+            logging.debug("No frame available. Retrying in 0.1 seconds.")
             time.sleep(0.1)
 
 @app.route('/')
