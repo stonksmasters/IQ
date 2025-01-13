@@ -11,7 +11,8 @@ import signal
 import os
 import threading
 
-from flipper import fetch_flipper_data  # Ensure this function exists in flipper.py
+# Ensure fetch_flipper_data exists in flipper.py or remove the import if unused
+from flipper import fetch_flipper_data  
 from shared import signals_data, signals_lock, selected_signal
 from config import config
 
@@ -97,6 +98,8 @@ def frame_reader():
                         with frame_lock:
                             latest_frame = bytes(frame)
                             logging.debug(f"Updated latest_frame with size {len(latest_frame)} bytes.")
+                else:
+                    logging.warning(f"Unexpected data in named pipe: {boundary_line.strip()}")
 
     except FileNotFoundError as e:
         logging.error(f"Named pipe not found: {e}")
@@ -104,7 +107,6 @@ def frame_reader():
         logging.error(f"Error in frame_reader: {e}")
     finally:
         logging.info("Frame reader thread terminated.")
-
 def generate_frames():
     """
     Generator function to yield the latest frame to the client.
@@ -136,7 +138,6 @@ def generate_frames():
         else:
             logging.debug("No frame available to yield. Sleeping for 0.1 seconds.")
             time.sleep(0.1)
-
 @app.route('/')
 def index():
     """Main page with HTML/JS to display the video stream and signals."""
@@ -219,3 +220,11 @@ if __name__ == '__main__':
 
     logging.info("Starting SocketIO server on 0.0.0.0:5000")
     socketio.run(app, host='0.0.0.0', port=5000)
+
+@socketio.on('connect')
+def handle_connect():
+    logging.info(f"SocketIO client connected: {request.sid}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    logging.info(f"SocketIO client disconnected: {request.sid}")
