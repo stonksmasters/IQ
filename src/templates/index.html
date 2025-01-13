@@ -1,121 +1,54 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Signal Tracker</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Link to external CSS -->
-  <link rel="stylesheet" href="/static/css/styles.css">
+<!-- templates/index.html -->
 
-  <!-- Include Socket.IO client library -->
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" integrity="sha384-puKb8ufC6a6m0O/xQ4NnKDRK1sxxk6+uqg0ZDHpO3eYIpU4YnE8tOq3Y4IqKZLbz" crossorigin="anonymous"></script>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Stream with HUD</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #videoStream {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 2;
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Left Side: Signal Section -->
-    <div class="signal-section">
-      <div class="signal-header">
-        <h1>Signal Tracker</h1>
-      </div>
-      <div class="signal-lists">
-        <h2>Wi-Fi Signals</h2>
-        <ul id="wifi-list"></ul>
-
-        <h2>Bluetooth Signals</h2>
-        <ul id="bluetooth-list"></ul>
-
-        <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
-      </div>
+    <img id="videoStream" src="{{ url_for('video_feed') }}" alt="Video Stream">
+    <div id="hud">
+        <!-- HUD data will be inserted here -->
     </div>
 
-    <!-- Right Side: Video Feed -->
-    <div class="video-section">
-      <h2 class="video-title">Live Video Feed</h2>
-      <div class="video-container">
-        <!-- Updated to match /video_feed Flask endpoint -->
-        <img src="/video_feed" alt="Live Camera Feed" width="100%" height="100%">
-      </div>
-    </div>
-  </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+    <script>
+        var socket = io();
 
-  <script>
-    // Establish WebSocket connection
-    const socket = io();
-
-    socket.on('connect', () => {
-      console.log('Connected to WebSocket server.');
-    });
-
-    socket.on('connection_response', (data) => {
-      console.log(data.message);
-    });
-
-    socket.on('update_signals', (data) => {
-      console.log('Received signals:', data.signals);
-      updateSignalLists(data.signals);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('Disconnected from WebSocket server.');
-    });
-
-    function updateSignalLists(signals) {
-      const wifiList = document.getElementById('wifi-list');
-      const bluetoothList = document.getElementById('bluetooth-list');
-
-      wifiList.innerHTML = '';
-      bluetoothList.innerHTML = '';
-
-      signals.forEach(signal => {
-        const listItem = document.createElement('li');
-        const signalName = signal.name || signal.SSID || "Unknown";
-        const signalStrength = signal.rssi || signal.signal || "N/A";
-        const type = signal.type || "Unknown";
-
-        listItem.innerHTML = `
-          <div class="signal-info">
-            <strong>${signalName}</strong> (${signalStrength} dBm)
-          </div>
-        `;
-        const button = document.createElement('button');
-        button.textContent = 'Track';
-        button.className = 'track-button';
-        button.onclick = () => trackSignal(type, signalName);
-
-        listItem.appendChild(button);
-        if (type.toLowerCase() === "wifi") {
-          wifiList.appendChild(listItem);
-        } else if (type.toLowerCase() === "bluetooth") {
-          bluetoothList.appendChild(listItem);
-        }
-      });
-    }
-
-    async function trackSignal(type, name) {
-      try {
-        await fetch('/track_signal', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type, name })
+        socket.on('update_signals', function(data) {
+            var hudDiv = document.getElementById('hud');
+            hudDiv.innerHTML = ''; // Clear existing data
+            data.signals.forEach(function(signal) {
+                var p = document.createElement('p');
+                p.textContent = signal.type + ': ' + signal.name + ' (RSSI: ' + signal.rssi + ')';
+                hudDiv.appendChild(p);
+            });
         });
-        alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
-      } catch (error) {
-        console.error("Error tracking signal:", error);
-      }
-    }
-
-    async function clearSignal() {
-      try {
-        await fetch('/clear_signal', { method: 'POST' });
-        alert('Tracking cleared.');
-      } catch (error) {
-        console.error("Error clearing signal:", error);
-      }
-    }
-
-    window.onload = () => {
-      // Initial fetch is handled by WebSocket; no need for polling
-    };
-  </script>
+    </script>
 </body>
 </html>

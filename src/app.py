@@ -7,9 +7,9 @@ from flask import Flask, render_template, Response
 from flask_socketio import SocketIO, emit
 import threading
 import time
-import cv2
 import logging
 import signal
+import subprocess
 
 from flipper import fetch_flipper_data  # Ensure flipper.py is in the correct path
 from shared import signals_data, signals_lock, selected_signal  # Import shared data structures
@@ -29,52 +29,56 @@ logging.basicConfig(
     ]
 )
 
-# GStreamer pipeline configuration (updated to match the working manual pipeline)
-gst_pipeline = (
-    "libcamerasrc ! "
+# GStreamer pipeline command to output MJPEG frames via stdout
+gst_pipeline_cmd = (
+    "gst-launch-1.0 -v libcamerasrc ! "
     "queue ! "
     "videoconvert ! "
-    "video/x-raw,format=BGR,width=640,height=480,framerate=15/1 ! "
-    "appsink sync=false"
+    "jpegenc ! "
+    "multipartmux boundary=frame ! "
+    "fdsink fd=1"
 )
 
-class CameraStream:
-    def __init__(self):
-        self.cap = cv2.VideoCapture(
-            gst_pipeline, cv2.CAP_GSTREAMER
-        )
-        if not self.cap.isOpened():
-            logging.error("Failed to open GStreamer pipeline for the camera. Check the pipeline and permissions.")
-        else:
-            logging.info("Camera pipeline opened successfully.")
-
-    def generate_frames(self):
-        while self.cap.isOpened():
-            ret, frame = self.cap.read()
-            if not ret:
-                logging.error("Camera is not opened. Attempting to reopen...")
-                self.cap.release()
-                time.sleep(5)  # Wait before retrying
-                self.cap = cv2.VideoCapture(
-                    gst_pipeline, cv2.CAP_GSTREAMER
-                )
-                if not self.cap.isOpened():
-                    logging.error("Reopening camera failed. Retrying in 5 seconds...")
-                    continue
-                else:
-                    logging.info("Camera reopened successfully.")
-                    continue
-
-            # Encode the frame in JPEG format
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if not ret:
-                logging.error("Failed to encode frame.")
-                continue
-            frame = buffer.tobytes()
-
-            # Yield frame in byte format
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+def generate_frames():
+    """
+    Generator function to capture video frames using GStreamer subprocess.
+    """
+    logging.info("Starting GStreamer subprocess for video capture.")
+    proc = subprocess.Popen(
+        gst_pipeline_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    
+    boundary = b'--frame\r\n'
+    try:
+        while True:
+            # Read lines until boundary
+            line = proc.stdout.readline()
+            if not line:
+                break
+            if boundary in line:
+                # Read headers
+                content_type = proc.stdout.readline()
+                empty_line = proc.stdout.readline()
+                
+                # Read JPEG frame
+                # GStreamer doesn't send content-length, so read until boundary
+                frame = bytearray()
+                while True:
+                    byte = proc.stdout.read(1)
+                    if not byte:
+                        break
+                    frame += byte
+                    if frame.endswith(b'\r\n--frame\r\n'):
+                        frame = frame[:-len(b'\r\n--frame\r\n')]
+                        break
+                if frame:
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + bytes(frame) + b'\r\n')
+    except Exception as e:
+        logging.error(f"Error in generate_frames: {e}")
+    finally:
+        proc.kill()
+        logging.info("GStreamer subprocess terminated.")
 
 @app.route('/')
 def index():
@@ -84,7 +88,7 @@ def index():
 @app.route('/video_feed')
 def video_feed():
     """Video streaming route. Put this in the src attribute of an img tag."""
-    return Response(camera_stream.generate_frames(),
+    return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 def emit_signals():
@@ -104,9 +108,6 @@ def emit_signals():
         # Use socketio.sleep for non-blocking sleep in SocketIO context
         socketio.sleep(config.get('signal_update_interval', 5))  # Default to 5 seconds if not specified
 
-# Initialize CameraStream
-camera_stream = CameraStream()
-
 # Start emit_signals thread
 signals_thread = threading.Thread(target=emit_signals)
 signals_thread.daemon = True
@@ -115,8 +116,7 @@ signals_thread.start()
 def handle_shutdown(signal_num, frame):
     """Handle application shutdown gracefully."""
     logging.info("Received shutdown signal.")
-    if camera_stream.cap.isOpened():
-        camera_stream.cap.release()
+    # Perform any necessary cleanup here
     socketio.stop()
 
 # Register shutdown handler
