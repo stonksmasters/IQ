@@ -1,4 +1,4 @@
-<!-- templates/index.html -->
+<!-- src/templates/index.html -->
 
 <!DOCTYPE html>
 <html lang="en">
@@ -6,46 +6,52 @@
   <meta charset="UTF-8">
   <title>Signal Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Link to external CSS -->
   <link rel="stylesheet" href="/static/css/styles.css">
-
-  <!-- Include Socket.IO client library -->
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" integrity="sha384-puKb8ufC6a6m0O/xQ4NnKDRK1sxxk6+uqg0ZDHpO3eYIpU4YnE8tOq3Y4IqKZLbz" crossorigin="anonymous"></script>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    body, html {
+      margin: 0; padding: 0; overflow: hidden;
+      width: 100%; height: 100%;
+    }
+    #videoStream {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: 1;
+    }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 2;
+    }
+    .signal-lists ul {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Left Side: Signal Section -->
-    <div class="signal-section">
-      <div class="signal-header">
-        <h1>Signal Tracker</h1>
-      </div>
-      <div class="signal-lists">
-        <h2>Wi-Fi Signals</h2>
-        <ul id="wifi-list"></ul>
-
-        <h2>Bluetooth Signals</h2>
-        <ul id="bluetooth-list"></ul>
-
-        <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
-      </div>
-    </div>
-
-    <!-- Right Side: Video Feed -->
-    <div class="video-section">
-      <h2 class="video-title">Live Video Feed</h2>
-      <div class="video-container">
-        <!-- Updated to match /video_feed Flask endpoint -->
-        <img src="{{ url_for('video_feed') }}" alt="Live Camera Feed" width="100%" height="100%">
-      </div>
-    </div>
+  <img id="videoStream" src="/video_feed" alt="Live Feed">
+  <div id="hud">
+    <h2>Wi-Fi Signals</h2>
+    <ul id="wifi-list"></ul>
+    <h2>Bluetooth Signals</h2>
+    <ul id="bluetooth-list"></ul>
+    <button onclick="clearSignal()">Clear Tracking</button>
   </div>
 
   <script>
-    // Establish WebSocket connection
     const socket = io();
 
     socket.on('connect', () => {
-      console.log('Connected to WebSocket server.');
+      console.log('Connected to server');
     });
 
     socket.on('update_signals', (data) => {
@@ -53,61 +59,29 @@
       updateSignalLists(data.signals);
     });
 
-    socket.on('disconnect', () => {
-      console.log('Disconnected from WebSocket server.');
-    });
-
     function updateSignalLists(signals) {
       const wifiList = document.getElementById('wifi-list');
       const bluetoothList = document.getElementById('bluetooth-list');
-
       wifiList.innerHTML = '';
       bluetoothList.innerHTML = '';
 
-      signals.forEach(signal => {
-        const listItem = document.createElement('li');
-        const signalName = signal.name || signal.SSID || "Unknown";
-        const signalStrength = signal.rssi || signal.signal || "N/A";
-        const type = signal.type || "Unknown";
-
-        listItem.innerHTML = `
-          <div class="signal-info">
-            <strong>${signalName}</strong> (${signalStrength} dBm)
-          </div>
-        `;
-        const button = document.createElement('button');
-        button.textContent = 'Track';
-        button.className = 'track-button';
-        button.onclick = () => trackSignal(type, signalName);
-
-        listItem.appendChild(button);
-        if (type.toLowerCase() === "wifi") {
-          wifiList.appendChild(listItem);
-        } else if (type.toLowerCase() === "bluetooth") {
-          bluetoothList.appendChild(listItem);
+      signals.forEach(sig => {
+        const li = document.createElement('li');
+        li.textContent = `${sig.name} (RSSI: ${sig.rssi})`;
+        if (sig.type.toLowerCase() === 'wifi') {
+          wifiList.appendChild(li);
+        } else if (sig.type.toLowerCase() === 'bluetooth') {
+          bluetoothList.appendChild(li);
         }
       });
-    }
-
-    async function trackSignal(type, name) {
-      try {
-        await fetch('/track_signal', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type, name })
-        });
-        alert(`Now tracking ${type.toUpperCase()} signal: ${name}`);
-      } catch (error) {
-        console.error("Error tracking signal:", error);
-      }
     }
 
     async function clearSignal() {
       try {
         await fetch('/clear_signal', { method: 'POST' });
         alert('Tracking cleared.');
-      } catch (error) {
-        console.error("Error clearing signal:", error);
+      } catch (err) {
+        console.error(err);
       }
     }
   </script>

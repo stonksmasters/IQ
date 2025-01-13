@@ -5,51 +5,50 @@ import serial.tools.list_ports
 import logging
 import time
 import re
-from utils.triangulation import rssi_to_distance, triangulate
-from shared import signals_data, signals_lock, selected_signal
+import threading
+
+from shared import signals_data, signals_lock
 from config import config
-import threading  # Ensure threading is imported
 
 def find_flipper_zero():
-    """Find the Flipper Zero device connected via serial."""
     ports = serial.tools.list_ports.comports()
     for port in ports:
-        if "Flipper" in port.description:
+        if "Flipper" in port.description or "ttyACM" in port.device:
             logging.info(f"Flipper Zero found on port: {port.device}")
             return port.device
     logging.warning("No Flipper Zero device found.")
     return None
 
+def is_flipper_connected():
+    return find_flipper_zero() is not None
+
+def ble_scan_with_flipper(port):
+    """Example BLE scan logic with Flipper Zero; update signals_data accordingly."""
+    try:
+        with serial.Serial(port, 115200, timeout=5) as ser:
+            logging.info("Flipper Zero is connected.")
+            # Example: send BLE scan command (pseudo-code)
+            # ser.write(b"scan_ble\r\n")
+            # read lines, parse output
+            # example -> signals_data["bluetooth"].append(...)
+            pass
+    except serial.SerialException as e:
+        logging.error(f"Serial exception: {e}")
+
 def background_flipper_scanner():
-    """Background thread to scan for BLE devices using Flipper Zero."""
+    """Continuously attempt BLE scans with Flipper Zero."""
     while True:
-        flipper_port = find_flipper_zero()
-        if flipper_port:
-            try:
-                ser = serial.Serial(flipper_port, 115200, timeout=1)
-                logging.info("Flipper Zero is connected.")
-                # Implement BLE scanning logic here
-                # Example:
-                # ser.write(b'scan_ble\n')
-                # response = ser.readline()
-                # Parse response and update signals_data
-                ser.close()
-            except serial.SerialException as e:
-                logging.error(f"Serial exception: {e}")
+        port = find_flipper_zero()
+        if port:
+            ble_scan_with_flipper(port)
         else:
             logging.warning("Flipper Zero not connected. Attempting to reconnect...")
 
-        time.sleep(10)  # Wait before next scan attempt
+        time.sleep(10)
 
-# Initialize and start the Flipper Zero scanner thread
 def init_flipper_zero():
-    scanner_thread = threading.Thread(target=background_flipper_scanner, daemon=True)
-    scanner_thread.start()
+    t = threading.Thread(target=background_flipper_scanner, daemon=True)
+    t.start()
 
-# Call initialization function on module import
+# Initialize on import
 init_flipper_zero()
-
-def fetch_flipper_data():
-    """Function to fetch data from Flipper Zero."""
-    # Implement data fetching logic here
-    pass

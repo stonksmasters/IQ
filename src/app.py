@@ -1,25 +1,23 @@
 # src/app.py
 
 import eventlet
-eventlet.monkey_patch()  # Must be the first import to ensure proper monkey patching
+eventlet.monkey_patch()  # Must be the first import
 
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, request, jsonify, Response
 from flask_socketio import SocketIO, emit
-import threading
-import time
 import logging
+import time
 import signal
 import os
+import threading
 
-from flipper import fetch_flipper_data  # Ensure flipper.py is in the correct path
-from shared import signals_data, signals_lock, selected_signal  # Import shared data structures
-from config import config  # Import configuration from config.py
+from flipper import fetch_flipper_data
+from shared import signals_data, signals_lock, selected_signal
+from config import config
 
-# Initialize Flask app and SocketIO with eventlet
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='eventlet')
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s:%(message)s',
@@ -29,13 +27,11 @@ logging.basicConfig(
     ]
 )
 
-# Path to the named pipe
+# Named pipe path
 named_pipe_path = 'named_pipes/video_pipe'
 
 def create_named_pipe(pipe_path):
-    """
-    Create a named pipe if it doesn't exist.
-    """
+    """Create a named pipe if it doesn't exist."""
     if not os.path.exists(pipe_path):
         os.makedirs(os.path.dirname(pipe_path), exist_ok=True)
         try:
@@ -50,58 +46,45 @@ def generate_frames():
     """
     Generator function to read video frames from a named pipe.
     """
-    named_pipe_path = 'named_pipes/video_pipe'
     logging.info(f"Opening named pipe {named_pipe_path} for reading.")
     try:
         with open(named_pipe_path, 'rb') as pipe:
             while True:
-                # Read until boundary --frame\r\n
                 boundary = b'--frame\r\n'
                 line = pipe.readline()
                 if not line:
-                    logging.warning("No data received from named pipe. Waiting for data...")
+                    logging.warning("No data from named pipe. Waiting...")
                     time.sleep(1)
                     continue
-                
-                # If we find the boundary line, read header lines until an empty line
+
+                # Found the boundary line: parse headers
                 if boundary in line:
                     while True:
                         header_line = pipe.readline()
                         if not header_line:
-                            logging.warning("Reached EOF or no more data in the pipe.")
+                            logging.warning("EOF or no more data in pipe.")
                             break
-                        # An empty line (\r\n) signifies the end of headers.
-                        if header_line == b'\r\n':
-                            # Proceed to read the frame data.
+                        if header_line == b'\r\n':  # empty line => end of headers
                             break
-                        else:
-                            # You can log or skip any specific headers here:
-                            # For example, skip Content-Length or Content-Type
-                            logging.debug(f"Skipping header: {header_line.strip()}")
-                    
-                    # Now read the JPEG frame until we hit the next boundary
+                        logging.debug(f"Skipping header: {header_line.strip()}")
+
+                    # Read the JPEG frame until next boundary
                     frame = bytearray()
                     while True:
                         byte = pipe.read(1)
                         if not byte:
-                            # No more data, possibly EOF
+                            # EOF or no data
                             break
                         frame += byte
-                        
-                        # The next boundary is \r\n--frame\r\n
                         if frame.endswith(b'\r\n--frame\r\n'):
-                            # Remove that boundary from the frame
                             frame = frame[:-len(b'\r\n--frame\r\n')]
                             break
-                    
-                    # If we got a frame, yield it as part of the MJPEG stream
+
                     if frame:
-                        yield (
-                            b'--frame\r\n'
-                            b'Content-Type: image/jpeg\r\n\r\n'
-                            + frame +
-                            b'\r\n'
-                        )
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n'
+                               + frame +
+                               b'\r\n')
     except Exception as e:
         logging.error(f"Error reading from named pipe: {e}")
     finally:
@@ -109,18 +92,41 @@ def generate_frames():
 
 @app.route('/')
 def index():
-    """Serve the main page."""
     return render_template('index.html')
 
 @app.route('/video_feed')
 def video_feed():
-    """Video streaming route. Put this in the src attribute of an img tag."""
     return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/add_signal', methods=['POST'])
+def add_signal():
+    """
+    A simple REST endpoint to allow remote computers
+    to add signals that appear on the Pi's HUD.
+    """
+    data = request.get_json()
+    if not data or 'type' not in data or 'name' not in data:
+        return jsonify({'error': 'Invalid data'}), 400
+
+    signal_type = data['type'].lower()
+    signal_name = data['name']
+    signal_rssi = data.get('rssi', -60)  # default RSSI
+
+    with signals_lock:
+        if signal_type not in signals_data:
+            signals_data[signal_type] = []
+        signals_data[signal_type].append({
+            'name': signal_name,
+            'rssi': signal_rssi,
+            'type': signal_type
+        })
+
+    return jsonify({'status': 'success'}), 200
+
 def emit_signals():
     """
-    Emit signal updates to all connected clients.
+    Continuously emit signal data to all connected clients for the HUD.
     """
     while True:
         with signals_lock:
@@ -129,33 +135,20 @@ def emit_signals():
                 for item in data_list:
                     all_signals.append({**item, "type": signal_type})
 
-        # Emit the signals to all connected clients
         socketio.emit('update_signals', {'signals': all_signals})
+        socketio.sleep(config.get('signal_update_interval', 5))
 
-        # Use socketio.sleep for non-blocking sleep in SocketIO context
-        socketio.sleep(config.get('signal_update_interval', 5))  # Default to 5 seconds if not specified
-
-# Initialize named pipe
+# Prepare the named pipe
 create_named_pipe(named_pipe_path)
 
-# Start emit_signals thread
-signals_thread = threading.Thread(target=emit_signals)
-signals_thread.daemon = True
+# Start background thread to emit signals
+signals_thread = threading.Thread(target=emit_signals, daemon=True)
 signals_thread.start()
 
-def handle_shutdown(signal_num, frame):
-    """Handle application shutdown gracefully."""
-    logging.info("Received shutdown signal.")
-    # Perform any necessary cleanup here
+def handle_shutdown(sig, frame):
+    logging.info("Received shutdown signal, stopping SocketIO...")
     socketio.stop()
 
-# Register shutdown handler
 signal.signal(signal.SIGINT, handle_shutdown)
 signal.signal(signal.SIGTERM, handle_shutdown)
 
-if __name__ == '__main__':
-    try:
-        logging.info("Starting the application with SocketIO...")
-        socketio.run(app, host='0.0.0.0', port=5000)
-    except Exception as e:
-        logging.error(f"Application failed to start: {e}")

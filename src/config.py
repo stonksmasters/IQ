@@ -4,18 +4,17 @@ import yaml
 import logging
 
 def load_config():
-    """Load configuration from config.yaml."""
+    """Load configuration from config/config.yaml."""
     try:
-        with open('config/config.yaml', 'r') as file:
-            config = yaml.safe_load(file)
+        with open('config/config.yaml', 'r') as f:
+            conf = yaml.safe_load(f)
             logging.info("Configuration loaded successfully.")
-            return config
+            return conf
     except FileNotFoundError:
-        logging.error("Configuration file config.yaml not found.")
+        logging.error("config/config.yaml not found.")
         return {}
-    except yaml.YAMLError as exc:
-        logging.error(f"Error parsing config.yaml: {exc}")
+    except yaml.YAMLError as e:
+        logging.error(f"Error parsing YAML: {e}")
         return {}
 
-# Load configuration on module import
 config = load_config()
