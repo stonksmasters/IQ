@@ -1,5 +1,8 @@
 #/src/app.py
 
+import eventlet
+eventlet.monkey_patch()  # Ensure this is the first line for proper monkey patching
+
 from flask import Flask, render_template, request, jsonify, Response, Blueprint
 from flask_socketio import SocketIO, emit
 import threading
@@ -7,12 +10,10 @@ import time
 import cv2
 import logging
 import signal
+
 from flipper import fetch_flipper_data  # Ensure flipper.py is in the correct path
-import eventlet
-import eventlet.wsgi
-from shared import signals_data, signals_lock, selected_signal  # Import from shared.py
-from config import config  # Import config from config.py
-eventlet.monkey_patch()
+from shared import signals_data, signals_lock, selected_signal  # Import shared data structures
+from config import config  # Import configuration from config.py
 
 # ------------------------------
 # Logging Configuration

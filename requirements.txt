@@ -1,8 +1,5 @@
 Flask
-Flask-SocketIO
-eventlet
+flask-socketio
 opencv-python
 bleak
-PyYAML
-pyserial
-numpy
+eventlet
