@@ -43,42 +43,44 @@ def generate_frames():
     """
     Generator function to capture video frames using GStreamer subprocess.
     """
-    logging.info("Starting GStreamer subprocess for video capture.")
-    proc = subprocess.Popen(
-        gst_pipeline_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    
-    boundary = b'--frame\r\n'
-    try:
-        while True:
-            # Read lines until boundary
-            line = proc.stdout.readline()
-            if not line:
-                break
-            if boundary in line:
-                # Read headers
-                content_type = proc.stdout.readline()
-                empty_line = proc.stdout.readline()
-                
-                # Read JPEG frame
-                # GStreamer doesn't send content-length, so read until boundary
-                frame = bytearray()
-                while True:
-                    byte = proc.stdout.read(1)
-                    if not byte:
-                        break
-                    frame += byte
-                    if frame.endswith(b'\r\n--frame\r\n'):
-                        frame = frame[:-len(b'\r\n--frame\r\n')]
-                        break
-                if frame:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + bytes(frame) + b'\r\n')
-    except Exception as e:
-        logging.error(f"Error in generate_frames: {e}")
-    finally:
-        proc.kill()
-        logging.info("GStreamer subprocess terminated.")
+    while True:
+        logging.info("Starting GStreamer subprocess for video capture.")
+        proc = subprocess.Popen(
+            gst_pipeline_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        
+        boundary = b'--frame\r\n'
+        try:
+            while True:
+                # Read lines until boundary
+                line = proc.stdout.readline()
+                if not line:
+                    logging.error("GStreamer subprocess terminated unexpectedly.")
+                    break
+                if boundary in line:
+                    # Read headers
+                    content_type = proc.stdout.readline()
+                    empty_line = proc.stdout.readline()
+                    
+                    # Read JPEG frame
+                    frame = bytearray()
+                    while True:
+                        byte = proc.stdout.read(1)
+                        if not byte:
+                            break
+                        frame += byte
+                        if frame.endswith(b'\r\n--frame\r\n'):
+                            frame = frame[:-len(b'\r\n--frame\r\n')]
+                            break
+                    if frame:
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + bytes(frame) + b'\r\n')
+        except Exception as e:
+            logging.error(f"Error in generate_frames: {e}")
+        finally:
+            proc.kill()
+            logging.info("GStreamer subprocess terminated. Restarting in 5 seconds...")
+            time.sleep(5)
 
 @app.route('/')
 def index():
