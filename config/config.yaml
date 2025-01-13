@@ -68,6 +68,14 @@ logging:
   file: "app.log"                  # Log file location
 
 # ------------------------------
+# Known Positions for Triangulation
+# ------------------------------
+known_positions:
+  "AA:BB:CC:DD:EE:FF": [0, 0]     # Example device address and its (x, y) position
+  "11:22:33:44:55:66": [10, 0]
+  # Add more devices as needed
+
+# ------------------------------
 # Additional Configurations
 # ------------------------------
 # You can add more configurations below as needed.

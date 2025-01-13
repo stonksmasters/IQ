@@ -1,19 +1,15 @@
+#/src/flipper.py
+
 import serial
 import serial.tools.list_ports
 import logging
 import time
 import re
 from utils.triangulation import rssi_to_distance, triangulate
+from shared import signals_data, signals_lock, selected_signal  # Import from shared.py
+from config import config  # Import config from config.py
 
 # Configure logging for Flipper Zero
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
-    handlers=[
-        logging.FileHandler("flipper.log"),
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger(__name__)
 
 # Default VID:PID for Flipper Zero (update this as needed)
@@ -37,7 +33,6 @@ def get_flipper_port():
         logger.error(f"Error finding Flipper port: {e}")
     return None
 
-
 def is_flipper_connected():
     """
     Check if Flipper Zero is connected via USB.
@@ -52,7 +47,6 @@ def is_flipper_connected():
     else:
         logger.info("Flipper Zero is not connected.")
         return False
-
 
 def flipper_ble_scan(known_positions):
     """
@@ -74,7 +68,7 @@ def flipper_ble_scan(known_positions):
             ser.reset_input_buffer()
             ser.write(b"ble scan\r\n")  # Command to start BLE scan
             logger.info("Initiating BLE scan on Flipper Zero...")
-            time.sleep(7)  # Adjust time based on your environment
+            time.sleep(9)  # Adjust time based on your environment
             response = ser.read_all().decode(errors='ignore')
             logger.debug(f"Raw BLE scan response: {response}")
             devices = parse_flipper_output(response, known_positions)
@@ -100,7 +94,6 @@ def flipper_ble_scan(known_positions):
     except Exception as e:
         logger.error(f"Unexpected error during BLE scan: {e}")
     return []
-
 
 def parse_flipper_output(output, known_positions):
     """
@@ -141,7 +134,6 @@ def parse_flipper_output(output, known_positions):
             logger.warning(f"Error parsing line: '{line}' | Exception: {e}")
     return devices
 
-
 def fetch_flipper_data(known_positions={}):
     """
     Fetch data from Flipper Zero via BLE scan.
@@ -152,4 +144,24 @@ def fetch_flipper_data(known_positions={}):
     Returns:
         list: List of scanned devices with calculated distances and positions.
     """
-    return flipper_ble_scan(known_positions)
+    devices = flipper_ble_scan(known_positions)
+    # Update the shared signals_data for Bluetooth
+    with signals_lock:
+        signals_data["bluetooth"] = devices
+    return devices
+
+# Optional: Background thread to continuously scan and update signals
+def background_flipper_scanner():
+    """
+    Continuously scans for BLE signals and updates the shared signals_data.
+    """
+    while True:
+        if is_flipper_connected():
+            fetch_flipper_data(config.get("known_positions", {}))
+        else:
+            logger.warning("Flipper Zero not connected. Attempting to reconnect...")
+        time.sleep(config.get('signal_update_interval', 5))  # Use same interval as WebSocket emissions
+
+# Start the background scanner thread
+scanner_thread = threading.Thread(target=background_flipper_scanner, daemon=True)
+scanner_thread.start()

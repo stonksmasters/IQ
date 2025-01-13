@@ -1,160 +1,14 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Signal Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Link to external CSS -->
   <link rel="stylesheet" href="/static/css/styles.css">
 
-  <style>
-    /* Base styling */
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: Arial, sans-serif;
-      background-color: #f4f4f9;
-      color: #333;
-    }
-
-    h1, h2 {
-      margin: 0;
-      padding: 0;
-      color: #007bff;
-    }
-
-    /* Container Layout */
-    .container {
-      display: flex;
-      flex-direction: row;
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    .signal-section {
-      width: 30%;
-      min-width: 300px;
-      max-width: 400px;
-      background: #fff;
-      display: flex;
-      flex-direction: column;
-      border-right: 1px solid #ddd;
-    }
-
-    .signal-header {
-      padding: 15px;
-      text-align: center;
-      background-color: #f8f9fa;
-      border-bottom: 1px solid #ddd;
-    }
-
-    .signal-lists {
-      flex: 1;
-      overflow-y: auto;
-      padding: 15px;
-    }
-
-    .signal-lists h2 {
-      margin: 20px 0 10px;
-      font-size: 1.2rem;
-    }
-
-    ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-
-    li {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background-color: #f8f9fa;
-      margin-bottom: 10px;
-      padding: 10px 15px;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      transition: transform 0.2s;
-    }
-
-    li:hover {
-      transform: scale(1.02);
-    }
-
-    .track-button {
-      background-color: #007bff;
-      color: #fff;
-      border: none;
-      padding: 5px 15px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: background-color 0.3s;
-    }
-
-    .track-button:hover {
-      background-color: #0056b3;
-    }
-
-    .clear-button {
-      display: inline-block;
-      margin-top: 10px;
-      background-color: #dc3545;
-      color: #fff;
-      border: none;
-      padding: 8px 15px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: background-color 0.3s;
-    }
-
-    .clear-button:hover {
-      background-color: #b02a37;
-    }
-
-    .video-section {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      padding: 15px;
-    }
-
-    .video-title {
-      margin-bottom: 15px;
-      text-align: center;
-    }
-
-    .video-container {
-      width: 100%;
-      height: calc(100% - 60px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    @media (max-width: 768px) {
-      .container {
-        flex-direction: column;
-      }
-
-      .signal-section {
-        width: 100%;
-        border-right: none;
-        border-bottom: 1px solid #ddd;
-        height: 40vh;
-      }
-
-      .video-section {
-        height: 60vh;
-      }
-
-      .video-container {
-        height: 100%;
-      }
-    }
-  </style>
+  <!-- Include Socket.IO client library -->
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" integrity="sha384-puKb8ufC6a6m0O/xQ4NnKDRK1sxxk6+uqg0ZDHpO3eYIpU4YnE8tOq3Y4IqKZLbz" crossorigin="anonymous"></script>
 </head>
 <body>
   <div class="container">
@@ -185,43 +39,56 @@
   </div>
 
   <script>
-    async function fetchSignals() {
-      try {
-        const response = await fetch('/signals');
-        const data = await response.json();
+    // Establish WebSocket connection
+    const socket = io();
 
-        const wifiList = document.getElementById('wifi-list');
-        const bluetoothList = document.getElementById('bluetooth-list');
+    socket.on('connect', () => {
+      console.log('Connected to WebSocket server.');
+    });
 
-        wifiList.innerHTML = '';
-        bluetoothList.innerHTML = '';
+    socket.on('connection_response', (data) => {
+      console.log(data.message);
+    });
 
-        data.signals.forEach(signal => {
-          const listItem = document.createElement('li');
-          const signalName = signal.name || signal.SSID || "Unknown";
-          const signalStrength = signal.rssi || signal.signal || "N/A";
-          const type = signal.type || "Unknown";
+    socket.on('update_signals', (data) => {
+      console.log('Received signals:', data.signals);
+      updateSignalLists(data.signals);
+    });
 
-          listItem.innerHTML = `
-            <div class="signal-info">
-              <strong>${signalName}</strong> (${signalStrength} dBm)
-            </div>
-          `;
-          const button = document.createElement('button');
-          button.textContent = 'Track';
-          button.className = 'track-button';
-          button.onclick = () => trackSignal(type, signalName);
+    socket.on('disconnect', () => {
+      console.log('Disconnected from WebSocket server.');
+    });
 
-          listItem.appendChild(button);
-          if (type === "wifi") {
-            wifiList.appendChild(listItem);
-          } else if (type === "bluetooth") {
-            bluetoothList.appendChild(listItem);
-          }
-        });
-      } catch (error) {
-        console.error("Error fetching signals:", error);
-      }
+    function updateSignalLists(signals) {
+      const wifiList = document.getElementById('wifi-list');
+      const bluetoothList = document.getElementById('bluetooth-list');
+
+      wifiList.innerHTML = '';
+      bluetoothList.innerHTML = '';
+
+      signals.forEach(signal => {
+        const listItem = document.createElement('li');
+        const signalName = signal.name || signal.SSID || "Unknown";
+        const signalStrength = signal.rssi || signal.signal || "N/A";
+        const type = signal.type || "Unknown";
+
+        listItem.innerHTML = `
+          <div class="signal-info">
+            <strong>${signalName}</strong> (${signalStrength} dBm)
+          </div>
+        `;
+        const button = document.createElement('button');
+        button.textContent = 'Track';
+        button.className = 'track-button';
+        button.onclick = () => trackSignal(type, signalName);
+
+        listItem.appendChild(button);
+        if (type.toLowerCase() === "wifi") {
+          wifiList.appendChild(listItem);
+        } else if (type.toLowerCase() === "bluetooth") {
+          bluetoothList.appendChild(listItem);
+        }
+      });
     }
 
     async function trackSignal(type, name) {
@@ -246,9 +113,9 @@
       }
     }
 
-    setInterval(fetchSignals, 5000);
-
-    window.onload = fetchSignals;
+    window.onload = () => {
+      // Initial fetch is handled by WebSocket; no need for polling
+    };
   </script>
 </body>
 </html>

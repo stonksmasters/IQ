@@ -1,33 +1,18 @@
 #/src/app.py
 
 from flask import Flask, render_template, request, jsonify, Response, Blueprint
+from flask_socketio import SocketIO, emit
 import threading
 import time
 import cv2
 import logging
 import signal
-import yaml
 from flipper import fetch_flipper_data  # Ensure flipper.py is in the correct path
-
-# ------------------------------
-# Configuration Management
-# ------------------------------
-def load_config(config_path='config/config.yaml'):
-    """
-    Load configuration from a YAML file.
-    """
-    try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        logging.info("Configuration loaded successfully.")
-        return config
-    except FileNotFoundError:
-        logging.error(f"Configuration file {config_path} not found.")
-    except yaml.YAMLError as e:
-        logging.error(f"Error parsing YAML configuration: {e}")
-    except Exception as e:
-        logging.error(f"Unexpected error loading configuration: {e}")
-    return {}
+import eventlet
+import eventlet.wsgi
+from shared import signals_data, signals_lock, selected_signal  # Import from shared.py
+from config import config  # Import config from config.py
+eventlet.monkey_patch()
 
 # ------------------------------
 # Logging Configuration
@@ -61,17 +46,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # ------------------------------
-# Shared Data Structures
+# Initialize SocketIO
 # ------------------------------
-signals_lock = threading.Lock()
-signals_data = {
-    "wifi": [],
-    "bluetooth": [],
-    "subghz": [],
-    "nfc": [],
-    "rfid": []
-}
-selected_signal = {"type": None, "name": None, "position": None}
+socketio = SocketIO(app, async_mode='eventlet')
 
 # ------------------------------
 # Video Feed Generation (MJPEG)
@@ -153,10 +130,9 @@ def generate_frames(camera_stream):
                 logger.error("JPEG encoding failed.")
         else:
             logger.debug("No frame available yet.")
-        time.sleep(0.033)  # Approximately 30 FPS
+        socketio.sleep(0.033)  # Approximately 30 FPS
 
 # Initialize CameraStream with configuration
-config = load_config()
 cam_width = config.get('camera', {}).get('width', 640)
 cam_height = config.get('camera', {}).get('height', 480)
 cam_framerate = config.get('camera', {}).get('framerate', 15)
@@ -277,11 +253,40 @@ def flipper_rfid():
 app.register_blueprint(main_bp)
 
 # ------------------------------
+# WebSocket Event Handlers
+# ------------------------------
+
+@socketio.on('connect')
+def handle_connect():
+    logger.info(f"Client connected: {request.sid}")
+    emit('connection_response', {'message': 'Connected to server.'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    logger.info(f"Client disconnected: {request.sid}")
+
+# Function to emit signals to all connected clients
+def emit_signals():
+    while True:
+        with signals_lock:
+            all_signals = []
+            for signal_type, data_list in signals_data.items():
+                for item in data_list:
+                    all_signals.append({**item, "type": signal_type})
+        socketio.emit('update_signals', {'signals': all_signals}, broadcast=True)
+        socketio.sleep(config.get('signal_update_interval', 5))  # Use socketio.sleep for compatibility
+
+# Start the signal emitter thread
+signal_thread = threading.Thread(target=emit_signals, daemon=True)
+signal_thread.start()
+
+# ------------------------------
 # Graceful Shutdown
 # ------------------------------
 def handle_exit(signum, frame):
     logger.info(f"Received signal {signum}. Shutting down server...")
     camera_stream.stop()
+    socketio.stop()  # Ensure SocketIO stops gracefully
     logger.info("Server shutdown complete.")
     exit(0)
 
@@ -291,11 +296,4 @@ signal.signal(signal.SIGTERM, handle_exit)
 # ------------------------------
 # Main Entry Point
 # ------------------------------
-if __name__ == "__main__":
-    logger.info("Starting Flask app.")
-    try:
-        app.run(host="0.0.0.0", port=5000, debug=config.get('debug', False))
-    except Exception as e:
-        logger.critical(f"Unhandled exception: {e}")
-    finally:
-        camera_stream.stop()
+# Note: main.py will handle running the server with SocketIO
