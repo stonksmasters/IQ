@@ -270,14 +270,22 @@ def handle_disconnect():
 
 # Function to emit signals to all connected clients
 def emit_signals():
+    """
+    Emit signal updates to all connected clients.
+    """
     while True:
         with signals_lock:
             all_signals = []
             for signal_type, data_list in signals_data.items():
                 for item in data_list:
                     all_signals.append({**item, "type": signal_type})
-        socketio.emit('update_signals', {'signals': all_signals}, broadcast=True)
-        socketio.sleep(config.get('signal_update_interval', 5))  # Use socketio.sleep for compatibility
+
+        # Emit the signals to all connected clients (broadcast by default)
+        socketio.emit('update_signals', {'signals': all_signals})
+        
+        # Use socketio.sleep for non-blocking sleep in SocketIO context
+        socketio.sleep(config.get('signal_update_interval', 5))  # Default to 5 seconds if not specified
+
 
 # Start the signal emitter thread
 signal_thread = threading.Thread(target=emit_signals, daemon=True)
