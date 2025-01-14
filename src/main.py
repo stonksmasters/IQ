@@ -1,5 +1,3 @@
-# src/main.py
-
 import logging
 import time
 import subprocess
@@ -7,20 +5,17 @@ from app import app, socketio
 
 def main():
     logging.basicConfig(
-        level=logging.DEBUG,  # Set to DEBUG for maximum verbosity
+        level=logging.DEBUG,
         format='%(asctime)s %(levelname)s:%(message)s',
-        handlers=[
-            logging.FileHandler("main.log"),
-            logging.StreamHandler()
-        ]
+        handlers=[logging.FileHandler("server.log"), logging.StreamHandler()]
     )
     logging.info("Starting the application with SocketIO...")
 
     try:
-        # Function to launch Chromium in kiosk mode after a short delay
+        # Function to launch Chromium in kiosk mode
         def launch_kiosk():
             logging.info("Kiosk launcher thread started. Waiting for server to initialize...")
-            time.sleep(5)  # Wait longer to ensure the server is up
+            time.sleep(5)  # Wait for server initialization
             logging.info("Launching Chromium in kiosk mode...")
             try:
                 subprocess.Popen([
@@ -28,20 +23,20 @@ def main():
                     "--noerrdialogs",
                     "--disable-infobars",
                     "--kiosk",
-                    "--incognito",  # Optional: opens in incognito mode
+                    "--incognito",
                     "http://localhost:5000"
                 ])
-                logging.info("Chromium launched successfully in kiosk mode.")
+                logging.info("Chromium launched successfully.")
             except Exception as e:
                 logging.error(f"Failed to launch Chromium: {e}")
 
-        # Start the kiosk launcher in a separate daemon thread
+        # Start kiosk launcher in a separate daemon thread
         from threading import Thread
         kiosk_thread = Thread(target=launch_kiosk, daemon=True)
         kiosk_thread.start()
 
-        # Run the SocketIO server (blocking call)
-        logging.info("Running SocketIO server...")
+        # Run the SocketIO server
+        logging.info("Running SocketIO server on 0.0.0.0:5000...")
         socketio.run(app, host='0.0.0.0', port=5000)
 
     except Exception as e:

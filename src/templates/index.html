@@ -5,7 +5,7 @@
   <title>Signal Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/styles.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" crossorigin="anonymous"></script>
   <style>
     body, html {
       margin: 0;
@@ -22,7 +22,6 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      z-index: 1;
     }
     #hud {
       position: absolute;
@@ -32,104 +31,67 @@
       color: white;
       padding: 15px;
       border-radius: 10px;
-      z-index: 2;
+      z-index: 10;
       max-width: 300px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
     }
-    #hud h2 {
-      margin: 5px 0;
-      font-size: 18px;
-    }
-    .signal-lists ul {
+    #hud ul {
       list-style: none;
       padding: 0;
-      margin: 5px 0 10px 0;
+      margin: 10px 0;
     }
-    .signal-lists li {
+    #hud li {
       margin: 5px 0;
-      font-size: 14px;
     }
-    .clear-button {
-      display: block;
+    #hud button {
       margin-top: 10px;
-      padding: 10px 15px;
-      background-color: #ff5555;
-      color: white;
+      padding: 10px;
       border: none;
       border-radius: 5px;
+      background: #f04;
+      color: white;
       cursor: pointer;
-      font-size: 14px;
-      transition: background-color 0.3s;
-    }
-    .clear-button:hover {
-      background-color: #ff4444;
     }
   </style>
 </head>
 <body>
-  <!-- Fullscreen Live Video Stream -->
-  <img id="videoStream" src="/video_feed" alt="Live Video Stream">
-
-  <!-- HUD for signals -->
+  <img id="videoStream" src="/video_feed" alt="Live Video Feed">
   <div id="hud">
     <h2>Wi-Fi Signals</h2>
     <ul id="wifi-list"></ul>
     <h2>Bluetooth Signals</h2>
     <ul id="bluetooth-list"></ul>
-    <button class="clear-button" onclick="clearSignal()">Clear Tracking</button>
+    <button onclick="clearSignals()">Clear Signals</button>
   </div>
-
   <script>
-    // Initialize Socket.IO connection
-    const socket = io({
-      transports: ['websocket'], // Use WebSocket for optimal performance
-    });
+    const socket = io();
 
-    // Handle successful connection
     socket.on('connect', () => {
       console.log('Connected to server');
     });
 
-    // Handle incoming signals and update the UI
     socket.on('update_signals', (data) => {
-      console.log('Received signals:', data.signals);
-      updateSignalLists(data.signals);
-    });
-
-    // Update the signal lists for Wi-Fi and Bluetooth
-    function updateSignalLists(signals) {
       const wifiList = document.getElementById('wifi-list');
       const bluetoothList = document.getElementById('bluetooth-list');
       wifiList.innerHTML = '';
       bluetoothList.innerHTML = '';
 
-      signals.forEach((signal) => {
-        const listItem = document.createElement('li');
-        listItem.textContent = `${signal.name} (RSSI: ${signal.rssi})`;
-
-        if (signal.type.toLowerCase() === 'wifi') {
-          wifiList.appendChild(listItem);
-        } else if (signal.type.toLowerCase() === 'bluetooth') {
-          bluetoothList.appendChild(listItem);
-        }
+      data.signals.forEach(signal => {
+        const li = document.createElement('li');
+        li.textContent = `${signal.name} (RSSI: ${signal.rssi})`;
+        if (signal.type === 'wifi') wifiList.appendChild(li);
+        else if (signal.type === 'bluetooth') bluetoothList.appendChild(li);
       });
-    }
+    });
 
-    // Clear signals via POST request
-    async function clearSignal() {
+    async function clearSignals() {
       try {
-        const response = await fetch('/clear_signal', { method: 'POST' });
-        if (response.ok) {
-          alert('Tracking cleared.');
-        } else {
-          console.error('Failed to clear signals:', response.statusText);
-        }
+        await fetch('/clear_signal', { method: 'POST' });
+        alert('Signals cleared');
       } catch (error) {
         console.error('Error clearing signals:', error);
       }
     }
 
-    // Handle disconnection from server
     socket.on('disconnect', () => {
       console.warn('Disconnected from server');
     });
