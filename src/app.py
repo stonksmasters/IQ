@@ -62,53 +62,36 @@ def frame_reader():
     logging.info(f"Starting frame reader thread. Opening named pipe {named_pipe_path} for reading.")
     try:
         with open(named_pipe_path, 'rb') as pipe:
-            logging.info("Named pipe opened successfully for reading.")
             while True:
-                # Read boundary line
-                boundary_line = pipe.readline()
-                logging.debug(f"Boundary line read: {boundary_line.strip()}")
-                if not boundary_line:
-                    logging.warning("No data from pipe. Retrying...")
+                boundary = pipe.readline()
+                if not boundary:
+                    logging.warning("Boundary not received. Retrying...")
                     time.sleep(1)
                     continue
 
-                boundary = b'--frame\r\n'
-                if boundary_line.strip() == boundary.strip():
-                    logging.debug("Detected frame boundary. Reading headers.")
-                    headers = {}
-                    while True:
-                        header_line = pipe.readline()
-                        if header_line == b'\r\n':  # End of headers
-                            break
-                        header_parts = header_line.decode('utf-8', errors='replace').split(':', 1)
-                        if len(header_parts) == 2:
-                            headers[header_parts[0].strip().lower()] = header_parts[1].strip()
+                # Read and process headers
+                headers = {}
+                while True:
+                    line = pipe.readline()
+                    if line == b'\r\n':
+                        break
+                    parts = line.decode('utf-8').strip().split(': ', 1)
+                    if len(parts) == 2:
+                        headers[parts[0].lower()] = parts[1]
 
-                    content_length = headers.get('content-length')
-                    if not content_length:
-                        logging.warning("Content-Length header missing. Skipping frame.")
-                        continue
+                # Read the frame data
+                content_length = int(headers.get('content-length', 0))
+                frame_data = pipe.read(content_length)
+                if len(frame_data) != content_length:
+                    logging.warning(f"Frame size mismatch. Expected {content_length}, got {len(frame_data)}.")
+                    continue
 
-                    try:
-                        content_length = int(content_length)
-                    except ValueError:
-                        logging.error(f"Invalid Content-Length: {content_length}. Skipping frame.")
-                        continue
-
-                    frame_data = pipe.read(content_length)
-                    if len(frame_data) != content_length:
-                        logging.warning(f"Frame size mismatch. Expected {content_length}, got {len(frame_data)}.")
-                        continue
-
-                    with frame_lock:
-                        latest_frame = frame_data
-                        logging.debug(f"Updated latest_frame. Size: {len(latest_frame)} bytes.")
-                else:
-                    logging.warning(f"Unexpected boundary: {boundary_line.strip()}")
+                # Decode frame and update latest_frame
+                with frame_lock:
+                    latest_frame = frame_data
+                logging.info(f"Frame of size {len(frame_data)} bytes successfully read.")
     except Exception as e:
         logging.error(f"Error in frame_reader: {e}")
-    finally:
-        logging.info("Frame reader thread terminated.")
 
 def generate_frames():
     global latest_frame
@@ -116,17 +99,20 @@ def generate_frames():
     while True:
         with frame_lock:
             frame = latest_frame
-
         if frame:
             try:
-                logging.debug(f"Yielding frame of size {len(frame)} bytes to client.")
+                logging.info(f"Serving frame of size {len(frame)} bytes.")
                 yield (
                     b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n'
+                    + frame +
+                    b'\r\n'
                 )
-            except Exception as e:
-                logging.error(f"Error while yielding frame: {e}")
+            except GeneratorExit:
+                logging.info("Client disconnected from video feed.")
                 break
+            except Exception as e:
+                logging.error(f"Error serving frame: {e}")
         else:
             logging.debug("No frame available. Retrying in 0.1 seconds.")
             time.sleep(0.1)
@@ -177,19 +163,21 @@ def add_signal():
 
 def emit_signals():
     """
-    Continuously emit signal data to all connected SocketIO clients for the HUD.
+    Continuously emit signal data to all connected SocketIO clients.
     """
     while True:
         with signals_lock:
             all_signals = []
             for signal_type, data_list in signals_data.items():
-                for item in data_list:
-                    all_signals.append({**item, "type": signal_type})
+                all_signals.extend({**item, "type": signal_type} for item in data_list)
 
-        # Emit to all connected clients
+        if all_signals:
+            logging.info(f"Emitting signals: {all_signals}")
+        else:
+            logging.info("No signals to emit.")
+
         socketio.emit('update_signals', {'signals': all_signals})
-        logging.debug(f"Emitted signals: {all_signals}")
-        socketio.sleep(5)  # Replace with config.get('signal_update_interval', 5) if config is defined
+        socketio.sleep(5)  # Interval for emitting updates
 
 @socketio.on('connect')
 def handle_connect():
